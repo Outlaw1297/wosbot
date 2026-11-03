@@ -165,3 +165,23 @@ names as a consistency guide rather than a mechanical acceptance rule.
 Use the PR template as a starting point. Adapt it for unusual changes when that
 improves reviewability, but always explain what changed, why, actual validation,
 and remaining risk. Never imply that an unperformed check passed.
+
+## Cursor Cloud specific instructions
+
+- JDK 21 and Python 3 are the host toolchain. Use the Maven Wrapper (`./mvnw`);
+  do not install a separate Maven.
+- Saved-frame OCR tests bind host Tesseract. The machine needs `tesseract-ocr`,
+  `libtesseract-dev`, and `libleptonica-dev`. OpenCV's Linux library comes from
+  the Maven artifact and does not need a system package.
+- Headless JavaFX and the full reactor need a virtual display. The CI command
+  is `xvfb-run --auto-servernum ./mvnw -B package`.
+- `./mvnw javafx:run` stores the development database, logs, and lock in the
+  gitignored `.frostguard-dev/` directory inside the worktree. On a fresh Linux
+  start the shell asks for an emulator executable before the main window
+  opens. MuMu, MEmu, and LDPlayer are Windows programs and are not available
+  here, so live game automation cannot be exercised. Profile creation and the
+  reactor tests are the local end-to-end checks.
+- `python3 build-support/release/verify_development_version.py` reads Stable
+  `vX.Y.Z` tags already reachable from HEAD (`git tag --merged HEAD`). A clone
+  without those tags cannot pass that script. The other `build-support` unit
+  tests do not need tags.
