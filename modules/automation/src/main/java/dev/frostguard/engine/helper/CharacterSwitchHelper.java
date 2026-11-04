@@ -26,6 +26,14 @@ public class CharacterSwitchHelper {
     static final int ROSTER_SCAN_PASSES = 6;
     static final int ROSTER_SCROLL_DURATION_MS = 500;
     static final int ROSTER_SCROLL_SETTLE_MS = 1000;
+    // Chief Profile animates in after the avatar tap; OCR before the settings
+    // control is visible reads loading garbage (power, "ID …", fragments).
+    static final int PROFILE_OPEN_SETTLE_MS = 2000;
+    static final int PROFILE_READY_ATTEMPTS = 10;
+    static final int PROFILE_READY_RETRY_DELAY_MS = 500;
+    static final int PROFILE_OCR_SETTLE_MS = 1000;
+    static final int PROFILE_MENU_BACK_SETTLE_MS = 800;
+    static final int ROSTER_OPEN_SETTLE_MS = 2500;
     static final String NAME_OCR_ALLOWED_CHARS =
             "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 _-";
 
@@ -35,6 +43,7 @@ public class CharacterSwitchHelper {
     private final ProfileContextLogger log;
     private final TemplateSearchHelper tpl;
     private final ResilientOcrExecutor<String> ocr;
+    private boolean lastSwitchRequiredReload;
 
     public CharacterSwitchHelper(EmulatorController emuManager, String emulatorNumber, AccountDescriptor profile) {
         this.emu = emuManager;
@@ -45,6 +54,11 @@ public class CharacterSwitchHelper {
         this.ocr = new ResilientOcrExecutor<>(new BotOcrEngine(emuManager, emulatorNumber));
     }
 
+    /** True when the last successful {@link #switchToCharacter} confirmed a real switch. */
+    public boolean lastSwitchRequiredReload() {
+        return lastSwitchRequiredReload;
+    }
+
     // --- Character verification ---
 
     public boolean verifyCurrentCharacter(AccountDescriptor p) {
@@ -52,36 +66,46 @@ public class CharacterSwitchHelper {
         if (blank(wantName) && blank(wantId)) { log.debug("No character config, skipping"); return true; }
         log.info("Verifying character: name='" + wantName + "' id='" + wantId + "'");
 
-        taps.tapInside(CommonGameAreas.PROFILE_AVATAR, 1, 500);
+        taps.tapInside(CommonGameAreas.PROFILE_AVATAR, 1, PROFILE_OPEN_SETTLE_MS);
+        if (!waitForChiefProfileReady()) {
+            log.warn("Chief Profile did not finish loading before OCR");
+            return false;
+        }
+        sleep(PROFILE_OCR_SETTLE_MS);
 
-        String liveId = ocrRead(CommonGameAreas.CHARACTER_ID_OCR_AREA, idOcrCfg());
-        String liveName = ocrRead(CommonGameAreas.CHARACTER_NAME_OCR_AREA, nameOcrCfg());
-        log.debug("Live char: name='" + liveName + "' id='" + liveId + "'");
+        LiveCharacter live = readLiveCharacter();
+        log.debug("Live char: name='" + live.name() + "' id='" + live.id() + "'");
 
-        boolean idOk = blank(wantId) || (!blank(liveId) && wantId.equals(liveId));
-        boolean nameOk = blank(wantName) || (!blank(liveName) && namesMatch(liveName, wantName));
-        if (!blank(wantId) && blank(liveId)) log.warn("ID configured but OCR failed");
-        if (!blank(wantName) && blank(liveName)) log.warn("Name configured but OCR failed");
-
-        if (idOk || nameOk) { log.info("Char verified OK"); emu.pressBack(dev); return true; }
-        log.warn("Char mismatch"); return false;
+        if (matchesConfigured(live, wantName, wantId)) {
+            log.info("Char verified OK from Chief Profile");
+            emu.pressBack(dev);
+            return true;
+        }
+        log.warn("Char mismatch");
+        return false;
     }
 
     // --- Character switching ---
 
     public boolean switchToCharacter(AccountDescriptor p) {
+        lastSwitchRequiredReload = false;
         String target = p.getCharacterName();
         if (blank(target)) { log.error("No character name configured"); return false; }
         log.info("Switching to '" + target + "' server=" + p.getCharacterServer());
 
+        if (!waitForChiefProfileReady()) {
+            log.error("Chief Profile settings control not ready for switch");
+            return false;
+        }
         if (!tapTemplate(TemplatesEnum.GAME_PROFILE_SETTINGS_BUTTON,
                 CommonGameAreas.PROFILE_SETTINGS_BUTTON_AREA)) {
             log.error("Settings button not found"); return false;
         }
+        sleep(PROFILE_MENU_BACK_SETTLE_MS);
         if (!tapTemplate(TemplatesEnum.GAME_PROFILE_SETTINGS_SWITCH_CHARACTER_BUTTON, null)) {
             log.error("Switch Character button not found"); emu.pressBack(dev); return false;
         }
-        sleep(2000);
+        sleep(ROSTER_OPEN_SETTLE_MS);
 
         for (int pass = 0; pass < ROSTER_SCAN_PASSES; pass++) {
             log.info("Roster scan " + (pass + 1) + "/" + ROSTER_SCAN_PASSES);
@@ -95,15 +119,20 @@ public class CharacterSwitchHelper {
                 continue;
             }
 
-            // Check if already active via checkmark badge
+            // Roster checkmark alone is not proof — confirm from Chief Profile OCR.
             if (checkmarkAt(hit.getPoint())) {
-                log.info("Already active — done");
-                emu.pressBack(dev); sleep(500); return true;
+                log.info("Roster shows already active — confirming from Chief Profile");
+                return confirmAlreadyActiveFromChiefProfile(p);
             }
 
             // Tap and confirm
             taps.tapInside(hit, 1, 500); sleep(500);
-            if (confirmSwitch(target)) { sleep(CHARACTER_SWITCH_RELOAD_DELAY_MS); log.info("Switch OK"); return true; }
+            if (confirmSwitch(target)) {
+                lastSwitchRequiredReload = true;
+                sleep(CHARACTER_SWITCH_RELOAD_DELAY_MS);
+                log.info("Switch OK");
+                return true;
+            }
             log.warn("Confirm failed, canceling");
             cancelSwitch();
         }
@@ -148,6 +177,30 @@ public class CharacterSwitchHelper {
                         .withMaxAttempts(1).withThreshold(90).build()).isFound();
     }
 
+    private boolean confirmAlreadyActiveFromChiefProfile(AccountDescriptor p) {
+        // Switch Character list -> Settings -> Chief Profile
+        emu.pressBack(dev);
+        sleep(PROFILE_MENU_BACK_SETTLE_MS);
+        emu.pressBack(dev);
+        sleep(PROFILE_OPEN_SETTLE_MS);
+        if (!waitForChiefProfileReady()) {
+            log.warn("Could not return to Chief Profile after roster already-active");
+            return false;
+        }
+        sleep(PROFILE_OCR_SETTLE_MS);
+        LiveCharacter live = readLiveCharacter();
+        log.debug("Live char after roster already-active: name='" + live.name() + "' id='" + live.id() + "'");
+        if (!matchesConfigured(live, p.getCharacterName(), p.getCharacterId())) {
+            log.warn("Roster checkmark present but Chief Profile OCR mismatch");
+            return false;
+        }
+        log.info("Char verified OK from Chief Profile after roster already-active");
+        emu.pressBack(dev);
+        sleep(PROFILE_MENU_BACK_SETTLE_MS);
+        lastSwitchRequiredReload = false;
+        return true;
+    }
+
     // --- Confirm / cancel dialog ---
 
     private boolean confirmSwitch(String expectedName) {
@@ -177,6 +230,48 @@ public class CharacterSwitchHelper {
 
     // --- Shared utilities ---
 
+    private boolean waitForChiefProfileReady() {
+        ImageSearchResultData hit = tpl.locatePattern(
+                TemplatesEnum.GAME_PROFILE_SETTINGS_BUTTON,
+                TemplateSearchHelper.SearchConfig.builder()
+                        .withArea(CommonGameAreas.PROFILE_SETTINGS_BUTTON_AREA)
+                        .withMaxAttempts(PROFILE_READY_ATTEMPTS)
+                        .withDelay(PROFILE_READY_RETRY_DELAY_MS)
+                        .withThreshold(80)
+                        .build());
+        boolean ready = hit != null && hit.isFound();
+        if (ready) {
+            log.debug("Chief Profile ready (settings control visible)");
+        }
+        return ready;
+    }
+
+    private LiveCharacter readLiveCharacter() {
+        String liveId = ocrRead(CommonGameAreas.CHARACTER_ID_OCR_AREA, idOcrCfg());
+        String liveName = ocrRead(CommonGameAreas.CHARACTER_NAME_OCR_AREA, nameOcrCfg());
+        // Loading frames sometimes OCR the ID label/value into the name strip.
+        if (looksLikeIdLeak(liveName)) {
+            log.debug("Discarding leaked ID text from name OCR: '" + liveName + "'");
+            liveName = null;
+        }
+        return new LiveCharacter(liveName, liveId);
+    }
+
+    private boolean matchesConfigured(LiveCharacter live, String wantName, String wantId) {
+        boolean idOk = blank(wantId) || (!blank(live.id()) && wantId.equals(live.id()));
+        boolean nameOk = blank(wantName) || (!blank(live.name()) && namesMatch(live.name(), wantName));
+        if (!blank(wantId) && blank(live.id())) log.warn("ID configured but OCR failed");
+        if (!blank(wantName) && blank(live.name())) log.warn("Name configured but OCR failed");
+        return idOk || nameOk;
+    }
+
+    static boolean looksLikeIdLeak(String ocrText) {
+        if (blank(ocrText)) return false;
+        String trimmed = ocrText.trim();
+        if (trimmed.regionMatches(true, 0, "ID", 0, 2)) return true;
+        return trimmed.chars().allMatch(Character::isDigit);
+    }
+
     private boolean tapTemplate(TemplatesEnum t, AreaData area) {
         TemplateSearchHelper.SearchConfig.Builder b = TemplateSearchHelper.SearchConfig.builder()
                 .withMaxAttempts(3).withDelay(500).withThreshold(80);
@@ -200,7 +295,7 @@ public class CharacterSwitchHelper {
     }
 
     private String ocrRead(AreaData area, OcrSettingsData cfg) {
-        return ocr.attemptRecognition(area, 3, 300L, cfg, t -> t != null && !t.trim().isEmpty(), String::trim);
+        return ocr.attemptRecognition(area, 4, 400L, cfg, t -> t != null && !t.trim().isEmpty(), String::trim);
     }
 
     private static boolean blank(String s) { return s == null || s.isEmpty(); }
@@ -234,4 +329,6 @@ public class CharacterSwitchHelper {
     private void sleep(long ms) {
         try { Thread.sleep(ms); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
     }
+
+    private record LiveCharacter(String name, String id) {}
 }

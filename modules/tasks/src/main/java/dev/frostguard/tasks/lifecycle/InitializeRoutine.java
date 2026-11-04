@@ -961,17 +961,20 @@ public class InitializeRoutine extends DelayedTask {
 				return false;
 			}
 			
-			// Character switch successful, wait for game to reload
-			logInfo("Character switch successful. Waiting for game to reload...");
-			sleepTask(CharacterSwitchHelper.CHARACTER_SWITCH_RELOAD_DELAY_MS);
-			
-			// Re-check home screen after character switch
-			if (!waitForHomeScreen()) {
-				// Home screen not found after character switch
-				return false;
+			if (characterSwitchHelper.lastSwitchRequiredReload()) {
+				// Confirmed switch — wait for the account reload to settle on home.
+				logInfo("Character switch successful. Waiting for game to reload...");
+				sleepTask(CharacterSwitchHelper.CHARACTER_SWITCH_RELOAD_DELAY_MS);
+
+				if (!waitForHomeScreen()) {
+					return false;
+				}
+
+				logInfo("Home screen verified after character switch.");
+			} else {
+				// Roster already-active path confirmed from Chief Profile; no reload.
+				logInfo("Target character was already active; confirmed from Chief Profile.");
 			}
-			
-			logInfo("Home screen verified after character switch.");
 		} else {
 			logInfo("Character verification passed - correct character is active.");
 		}
