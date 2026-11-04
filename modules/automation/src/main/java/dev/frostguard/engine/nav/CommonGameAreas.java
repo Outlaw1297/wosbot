@@ -244,6 +244,10 @@ public final class CommonGameAreas {
             region(30, 280, 340, 380);
     public static final AreaData PROFILE_SETTINGS_SWITCH_CHARACTER_CHARACTER_LIST_AREA =
             region(60, 380, 660, 1100);
+    // Timed swipe inside the modal list. Instant default swipes are too fast for
+    // the nested roster scroller, so callers must pass an explicit duration.
+    public static final PointData CHARACTER_ROSTER_SCROLL_FROM = point(360, 980);
+    public static final PointData CHARACTER_ROSTER_SCROLL_TO = point(360, 520);
     public static final AreaData PROFILE_SETTINGS_SWITCH_CHARACTER_PROMPT_BUTTON_AREA =
             region(50, 750, 670, 850);
     public static final AreaData PROFILE_SETTINGS_SWITCH_CHARACTER_CONFIRM_DIALOG_NAME_OCR_AREA =

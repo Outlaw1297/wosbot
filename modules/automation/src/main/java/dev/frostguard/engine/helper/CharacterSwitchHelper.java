@@ -2,7 +2,7 @@ package dev.frostguard.engine.helper;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.regex.Pattern;
+import java.util.Locale;
 
 import dev.frostguard.api.configs.TemplatesEnum;
 import dev.frostguard.api.domain.AccountDescriptor;
@@ -21,6 +21,13 @@ import dev.frostguard.vision.ocr.ResilientOcrExecutor;
 public class CharacterSwitchHelper {
 
     public static final int CHARACTER_SWITCH_RELOAD_DELAY_MS = 5000;
+
+    // Nested roster lists ignore instant default swipes; match sidebar timing.
+    static final int ROSTER_SCAN_PASSES = 6;
+    static final int ROSTER_SCROLL_DURATION_MS = 500;
+    static final int ROSTER_SCROLL_SETTLE_MS = 1000;
+    static final String NAME_OCR_ALLOWED_CHARS =
+            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 _-";
 
     private final EmulatorController emu;
     private final String dev;
@@ -52,7 +59,7 @@ public class CharacterSwitchHelper {
         log.debug("Live char: name='" + liveName + "' id='" + liveId + "'");
 
         boolean idOk = blank(wantId) || (!blank(liveId) && wantId.equals(liveId));
-        boolean nameOk = blank(wantName) || (!blank(liveName) && nameMatch(liveName, wantName));
+        boolean nameOk = blank(wantName) || (!blank(liveName) && namesMatch(liveName, wantName));
         if (!blank(wantId) && blank(liveId)) log.warn("ID configured but OCR failed");
         if (!blank(wantName) && blank(liveName)) log.warn("Name configured but OCR failed");
 
@@ -76,10 +83,17 @@ public class CharacterSwitchHelper {
         }
         sleep(2000);
 
-        for (int pass = 0; pass < 3; pass++) {
-            log.debug("Roster scan " + (pass + 1) + "/3");
+        for (int pass = 0; pass < ROSTER_SCAN_PASSES; pass++) {
+            log.info("Roster scan " + (pass + 1) + "/" + ROSTER_SCAN_PASSES);
             ImageSearchResultData hit = findInRoster(target);
-            if (hit == null) { log.debug("Not visible, scrolling"); scrollDown(); continue; }
+            if (hit == null) {
+                if (pass + 1 >= ROSTER_SCAN_PASSES) {
+                    break;
+                }
+                log.info("Target not visible, scrolling roster durationMs=" + ROSTER_SCROLL_DURATION_MS);
+                scrollDown();
+                continue;
+            }
 
             // Check if already active via checkmark badge
             if (checkmarkAt(hit.getPoint())) {
@@ -93,8 +107,7 @@ public class CharacterSwitchHelper {
             log.warn("Confirm failed, canceling");
             cancelSwitch();
         }
-        // Changed by pernerch | Date: 2026-07-02 | Why: close emulator only as final fallback after repeated switch failure.
-        log.error("Character not found after 3 passes — closing emulator");
+        log.error("Character not found after " + ROSTER_SCAN_PASSES + " passes — closing emulator");
         emu.closeEmulator(dev); return false;
     }
 
@@ -108,7 +121,10 @@ public class CharacterSwitchHelper {
         List<ImageSearchResultData> hits = new ArrayList<>();
         addAll(hits, tpl.locateAllPatterns(TemplatesEnum.GAME_PROFILE_SETTINGS_CHARACTER_FURNACE_LEVEL_ACTIVE, cfg));
         addAll(hits, tpl.locateAllPatterns(TemplatesEnum.GAME_PROFILE_SETTINGS_CHARACTER_FURNACE_LEVEL_INACTIVE, cfg));
-        if (hits.isEmpty()) return null;
+        if (hits.isEmpty()) {
+            log.info("No furnace indicators in current roster viewport");
+            return null;
+        }
         log.debug(hits.size() + " furnace indicators found");
 
         for (ImageSearchResultData h : hits) {
@@ -119,7 +135,7 @@ public class CharacterSwitchHelper {
                     new PointData(CommonGameAreas.CHARACTER_NAME_ABOVE_FURNACE_X_END,
                             fp.getY() - CommonGameAreas.CHARACTER_NAME_ABOVE_FURNACE_BOTTOM_OFFSET_Y),
                     2, 200, nameOcrCfg(), t -> t != null && !t.trim().isEmpty(), String::trim);
-            if (name != null && nameMatch(name, targetName)) { log.info("Found: '" + name + "'"); return h; }
+            if (name != null && namesMatch(name, targetName)) { log.info("Found: '" + name + "'"); return h; }
         }
         return null;
     }
@@ -139,7 +155,7 @@ public class CharacterSwitchHelper {
                 CommonGameAreas.PROFILE_SETTINGS_SWITCH_CHARACTER_CONFIRM_DIALOG_NAME_OCR_AREA.topLeft(),
                 CommonGameAreas.PROFILE_SETTINGS_SWITCH_CHARACTER_CONFIRM_DIALOG_NAME_OCR_AREA.bottomRight(),
                 2, 200, nameOcrCfg(), t -> t != null && !t.trim().isEmpty(), String::trim);
-        if (blank(dialogName) || !nameMatch(dialogName, expectedName)) {
+        if (blank(dialogName) || !namesMatch(dialogName, expectedName)) {
             log.warn("Dialog name mismatch: got='" + dialogName + "' want='" + expectedName + "'");
             return false;
         }
@@ -170,11 +186,17 @@ public class CharacterSwitchHelper {
         taps.tapInside(hit, 1, 500); return true;
     }
 
-    private boolean nameMatch(String ocrText, String expected) {
+    // OCR often drops underscores and spacing; compare alphanumerics only.
+    static boolean namesMatch(String ocrText, String expected) {
         if (blank(ocrText) || blank(expected)) return false;
-        String a = ocrText.trim().replaceAll("\\s+", "");
-        String b = expected.trim().replaceAll("\\s+", "");
-        return Pattern.compile(Pattern.quote(b), Pattern.CASE_INSENSITIVE).matcher(a).find();
+        String a = normalizeName(ocrText);
+        String b = normalizeName(expected);
+        if (b.isEmpty()) return false;
+        return a.toLowerCase(Locale.ROOT).contains(b.toLowerCase(Locale.ROOT));
+    }
+
+    static String normalizeName(String value) {
+        return value.replaceAll("[^A-Za-z0-9]", "");
     }
 
     private String ocrRead(AreaData area, OcrSettingsData cfg) {
@@ -184,8 +206,11 @@ public class CharacterSwitchHelper {
     private static boolean blank(String s) { return s == null || s.isEmpty(); }
 
     private void scrollDown() {
-        emu.swipeScreen(dev, new PointData(360, 800), new PointData(360, 400));
-        sleep(1000);
+        emu.swipeScreen(dev,
+                CommonGameAreas.CHARACTER_ROSTER_SCROLL_FROM,
+                CommonGameAreas.CHARACTER_ROSTER_SCROLL_TO,
+                ROSTER_SCROLL_DURATION_MS);
+        sleep(ROSTER_SCROLL_SETTLE_MS);
     }
 
     private static void addAll(List<ImageSearchResultData> dst, List<ImageSearchResultData> src) {
@@ -199,10 +224,10 @@ public class CharacterSwitchHelper {
                 .setRemoveBackground(true).build();
     }
 
-    private OcrSettingsData nameOcrCfg() {
+    static OcrSettingsData nameOcrCfg() {
         return OcrSettingsData.builder()
                 .textLayout(OcrSettingsData.TextLayout.SINGLE_LINE)
-                .setAllowedChars("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ")
+                .setAllowedChars(NAME_OCR_ALLOWED_CHARS)
                 .setRemoveBackground(true).build();
     }
 
