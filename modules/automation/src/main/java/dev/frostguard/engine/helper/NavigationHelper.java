@@ -14,6 +14,7 @@ import dev.frostguard.engine.error.ProfileInReconnectStateException;
 import dev.frostguard.engine.input.TapInteractionService;
 import dev.frostguard.engine.nav.ButtonConstants;
 import dev.frostguard.engine.nav.CommonGameAreas;
+import dev.frostguard.engine.nav.HorizontalStripSeeker;
 import dev.frostguard.engine.nav.SearchConfigConstants;
 import dev.frostguard.engine.nav.SidebarDestination;
 import dev.frostguard.engine.nav.SidebarRowLookup;
@@ -23,7 +24,6 @@ import dev.frostguard.engine.schedule.LaunchPoint;
 import dev.frostguard.engine.service.LoggingService;
 import dev.frostguard.vision.logging.ProfileContextLogger;
 import dev.frostguard.vision.convert.ImageConverter;
-import dev.frostguard.vision.match.ImageRegionStability;
 
 import java.time.Instant;
 
@@ -33,12 +33,19 @@ public class NavigationHelper {
 
     private static final int MAX_INTEL_NAV_PASSES = 3;
     private static final int BANK_NAVIGATION_ATTEMPTS = 2;
-    private static final long DEALS_CAROUSEL_SETTLE_MS = 1000L;
     private static final long BANK_INTERFACE_SETTLE_MS = 1500L;
-    private static final PointData DEALS_SWIPE_START = new PointData(630, 143);
-    private static final PointData DEALS_SWIPE_END = new PointData(2, 128);
     private static final PointData DEALS_TAB_BAR_TOP_LEFT = new PointData(0, 80);
     private static final PointData DEALS_TAB_BAR_BOTTOM_RIGHT = new PointData(720, 190);
+    // Deals uses the same Instant-ignored carousel behavior as Events.
+    static final AreaData DEALS_TAB_STRIP_AREA = area(0, 80, 720, 210);
+    static final PointData DEALS_TAB_LEFT_FROM = new PointData(80, 120);
+    static final PointData DEALS_TAB_LEFT_TO = new PointData(578, 130);
+    static final PointData DEALS_TAB_RIGHT_FROM = new PointData(630, 143);
+    static final PointData DEALS_TAB_RIGHT_TO = new PointData(280, 143);
+    static final int DEALS_TAB_SWIPE_DURATION_MS = 500;
+    static final long DEALS_TAB_SETTLE_MS = 1000L;
+    static final int DEALS_TAB_EDGE_STABLE_CONFIRMATIONS = 2;
+    static final int DEALS_TAB_MAX_SWIPES_PER_DIRECTION = 14;
     static final AreaData WORLD_INTEL_BUTTON_AREA = area(615, 800, 715, 1000);
     private static final TemplateSearchHelper.SearchConfig WORLD_INTEL_BUTTON_SEARCH =
             TemplateSearchHelper.SearchConfig.builder()
@@ -456,15 +463,7 @@ public class NavigationHelper {
                         + " could not open Deals");
                 continue;
             }
-            emu.swipeScreen(device, DEALS_SWIPE_START, DEALS_SWIPE_END);
-            interruptibleWait(400L);
-            emu.swipeScreen(device, DEALS_SWIPE_START, DEALS_SWIPE_END);
-            interruptibleWait(DEALS_CAROUSEL_SETTLE_MS);
-            ImageSearchResultData bank = searcher.locatePattern(
-                    TemplatesEnum.EVENTS_DEALS_BANK,
-                    TemplateSearchHelper.SearchConfig.builder().withMaxAttempts(1).withThreshold(90)
-                            .withDelay(300L).withCoordinates(DEALS_TAB_BAR_TOP_LEFT, DEALS_TAB_BAR_BOTTOM_RIGHT)
-                            .build());
+            ImageSearchResultData bank = seekDealsTabAcrossStrip(TemplatesEnum.EVENTS_DEALS_BANK);
             if (!bank.isFound()) {
                 broadcastWarn("Bank tab not found in Deals on attempt " + attempt + "/"
                         + BANK_NAVIGATION_ATTEMPTS);
@@ -482,6 +481,31 @@ public class NavigationHelper {
         }
         broadcastWarn("Bank navigation failed after " + BANK_NAVIGATION_ATTEMPTS + " attempts");
         return false;
+    }
+
+    private ImageSearchResultData seekDealsTabAcrossStrip(TemplatesEnum template) {
+        HorizontalStripSeeker.Config config = new HorizontalStripSeeker.Config(
+                DEALS_TAB_STRIP_AREA,
+                DEALS_TAB_LEFT_FROM,
+                DEALS_TAB_LEFT_TO,
+                DEALS_TAB_RIGHT_FROM,
+                DEALS_TAB_RIGHT_TO,
+                DEALS_TAB_SWIPE_DURATION_MS,
+                DEALS_TAB_SETTLE_MS,
+                DEALS_TAB_EDGE_STABLE_CONFIRMATIONS,
+                DEALS_TAB_MAX_SWIPES_PER_DIRECTION);
+        return HorizontalStripSeeker.seek(
+                stripSeekHost("Deals tab"),
+                config,
+                "Deals tab",
+                () -> searcher.locatePattern(
+                        template,
+                        TemplateSearchHelper.SearchConfig.builder()
+                                .withMaxAttempts(1)
+                                .withThreshold(90)
+                                .withDelay(300L)
+                                .withCoordinates(DEALS_TAB_BAR_TOP_LEFT, DEALS_TAB_BAR_BOTTOM_RIGHT)
+                                .build()));
     }
 
     private String findBankInterfaceEvidence() {
@@ -575,71 +599,50 @@ public class NavigationHelper {
     }
 
     private ImageSearchResultData seekEventTabAcrossStrip(EventMenu event, TemplatesEnum template) {
-        ImageSearchResultData tab = locateEventTab(event, template);
-        if (tab.isFound()) {
-            return tab;
-        }
-
-        // Rewind to the left edge first — Events often opens mid-list.
-        tab = swipeEventStripUntilEdgeOrFound(
-                event, template, EVENT_TAB_LEFT_FROM, EVENT_TAB_LEFT_TO, "left");
-        if (tab.isFound()) {
-            return tab;
-        }
-
-        // Walk right by a fixed pull; stop early when the tab appears or the strip stops changing.
-        return swipeEventStripUntilEdgeOrFound(
-                event, template, EVENT_TAB_RIGHT_FROM, EVENT_TAB_RIGHT_TO, "right");
+        HorizontalStripSeeker.Config config = new HorizontalStripSeeker.Config(
+                EVENT_TAB_STRIP_AREA,
+                EVENT_TAB_LEFT_FROM,
+                EVENT_TAB_LEFT_TO,
+                EVENT_TAB_RIGHT_FROM,
+                EVENT_TAB_RIGHT_TO,
+                EVENT_TAB_SWIPE_DURATION_MS,
+                EVENT_TAB_SETTLE_MS,
+                EVENT_TAB_EDGE_STABLE_CONFIRMATIONS,
+                EVENT_TAB_MAX_SWIPES_PER_DIRECTION);
+        return HorizontalStripSeeker.seek(
+                stripSeekHost("Event tab"),
+                config,
+                "Event tab",
+                () -> locateEventTab(event, template));
     }
 
-    private ImageSearchResultData swipeEventStripUntilEdgeOrFound(
-            EventMenu event,
-            TemplatesEnum template,
-            PointData from,
-            PointData to,
-            String direction) {
-        int stableConfirmations = 0;
-        ImageSearchResultData tab = ImageSearchResultData.miss();
-        for (int swipe = 1; swipe <= EVENT_TAB_MAX_SWIPES_PER_DIRECTION; swipe++) {
-            RawImageData before = captureEventTabStrip();
-            broadcastDebug("Event tab " + direction + " swipe " + swipe + "/"
-                    + EVENT_TAB_MAX_SWIPES_PER_DIRECTION
-                    + " durationMs=" + EVENT_TAB_SWIPE_DURATION_MS);
-            emu.swipeScreen(device, from, to, EVENT_TAB_SWIPE_DURATION_MS);
-            interruptibleWait(EVENT_TAB_SETTLE_MS);
-
-            tab = locateEventTab(event, template);
-            if (tab.isFound()) {
-                broadcastDebug("Event tab found during " + direction + " seek after swipe " + swipe);
-                return tab;
-            }
-
-            RawImageData after = captureEventTabStrip();
-            boolean unchanged = before != null && after != null
-                    && ImageRegionStability.unchanged(before, after, EVENT_TAB_STRIP_AREA);
-            if (unchanged) {
-                stableConfirmations++;
-                broadcastDebug("Event tab strip unchanged after " + direction + " swipe ("
-                        + stableConfirmations + "/" + EVENT_TAB_EDGE_STABLE_CONFIRMATIONS + ")");
-                if (stableConfirmations >= EVENT_TAB_EDGE_STABLE_CONFIRMATIONS) {
-                    broadcastDebug("Event tab strip reached " + direction + " edge");
-                    return tab;
+    private HorizontalStripSeeker.Host stripSeekHost(String label) {
+        return new HorizontalStripSeeker.Host() {
+            @Override
+            public RawImageData captureStrip() {
+                try {
+                    return emu.captureScreen(device);
+                } catch (RuntimeException ex) {
+                    broadcastDebug(label + " strip capture unavailable: " + ex.getMessage());
+                    return null;
                 }
-            } else {
-                stableConfirmations = 0;
             }
-        }
-        broadcastDebug("Event tab " + direction + " seek hit swipe budget without a stable edge");
-        return tab;
-    }
 
-    private RawImageData captureEventTabStrip() {
-        try {
-            return emu.captureScreen(device);
-        } catch (RuntimeException ex) {
-            broadcastDebug("Event tab strip capture unavailable: " + ex.getMessage());
-            return null;
-        }
+            @Override
+            public void swipe(PointData from, PointData to, int durationMs) {
+                emu.swipeScreen(device, from, to, durationMs);
+            }
+
+            @Override
+            public void settle(long settleMs) {
+                interruptibleWait(settleMs);
+            }
+
+            @Override
+            public void debug(String message) {
+                broadcastDebug(message);
+            }
+        };
     }
 
     private ImageSearchResultData locateEventTab(EventMenu event, TemplatesEnum template) {

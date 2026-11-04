@@ -38,6 +38,7 @@ import dev.frostguard.api.domain.OcrSettingsData;
 import dev.frostguard.api.domain.RawImageData;
 import dev.frostguard.api.runtime.WorkspacePaths;
 import dev.frostguard.engine.helper.MarchSlotAvailabilityEstimator;
+import dev.frostguard.engine.nav.HorizontalStripSeeker;
 import dev.frostguard.engine.schedule.DelayedTask;
 import dev.frostguard.engine.schedule.GatherQueuePolicy;
 import dev.frostguard.engine.schedule.LaunchPoint;
@@ -91,8 +92,16 @@ public class GatherRoutine extends DelayedTask {
     // PointData Constants (UI)
     private static final PointData SEARCH_BTN_TL = new PointData(25, 850);
     private static final PointData SEARCH_BTN_BR = new PointData(67, 898);
-    private static final PointData RES_TAB_SWIPE_START = new PointData(678, 913);
-    private static final PointData RES_TAB_SWIPE_END = new PointData(40, 913);
+    // Resource-type strip ignores Instant default swipes; seek like Events/Deals.
+    static final AreaData RES_TAB_STRIP_AREA = AreaData.of(1, 838, 715, 982);
+    static final PointData RES_TAB_LEFT_FROM = new PointData(80, 913);
+    static final PointData RES_TAB_LEFT_TO = new PointData(620, 913);
+    static final PointData RES_TAB_RIGHT_FROM = new PointData(678, 913);
+    static final PointData RES_TAB_RIGHT_TO = new PointData(200, 913);
+    static final int RES_TAB_SWIPE_DURATION_MS = 500;
+    static final long RES_TAB_SETTLE_MS = 700L;
+    static final int RES_TAB_EDGE_STABLE_CONFIRMATIONS = 2;
+    static final int RES_TAB_MAX_SWIPES_PER_DIRECTION = 8;
     private static final PointData LEVEL_DISPLAY_TL = new PointData(78, 991);
     private static final PointData LEVEL_DISPLAY_BR = new PointData(474, 1028);
     private static final PointData LEVEL_SLIDER_START = new PointData(435, 1052);
@@ -715,25 +724,67 @@ public class GatherRoutine extends DelayedTask {
     private boolean openSearchMenu() {
         tapInside(SEARCH_BTN_TL, SEARCH_BTN_BR);
         sleepTask(2000);
-        swipe(RES_TAB_SWIPE_START, RES_TAB_SWIPE_END);
-        sleepTask(500);
+        // Rewind left once so later right-seek does not miss tiles that opened mid-strip.
+        swipe(RES_TAB_LEFT_FROM, RES_TAB_LEFT_TO, RES_TAB_SWIPE_DURATION_MS);
+        sleepTask(RES_TAB_SETTLE_MS);
         return true;
     }
 
     private boolean selectTile(GatherType type) {
-        for (int i = 0; i < 4; i++) {
-            ImageSearchResultData tile = templateSearchHelper.locatePattern(type.tile, SearchConfig.builder().build());
-            if (tile.isFound()) {
-                tapInside(tile);
-                sleepTask(500);
-                return true;
-            }
-            if (i < 3) {
-                swipe(RES_TAB_SWIPE_START, RES_TAB_SWIPE_END);
-                sleepTask(500);
-            }
+        ImageSearchResultData tile = seekResourceTile(type.tile);
+        if (!tile.isFound()) {
+            return false;
         }
-        return false;
+        tapInside(tile);
+        sleepTask(500);
+        return true;
+    }
+
+    private ImageSearchResultData seekResourceTile(TemplatesEnum tileTemplate) {
+        HorizontalStripSeeker.Config config = new HorizontalStripSeeker.Config(
+                RES_TAB_STRIP_AREA,
+                RES_TAB_LEFT_FROM,
+                RES_TAB_LEFT_TO,
+                RES_TAB_RIGHT_FROM,
+                RES_TAB_RIGHT_TO,
+                RES_TAB_SWIPE_DURATION_MS,
+                RES_TAB_SETTLE_MS,
+                RES_TAB_EDGE_STABLE_CONFIRMATIONS,
+                RES_TAB_MAX_SWIPES_PER_DIRECTION);
+        return HorizontalStripSeeker.seek(
+                resourceStripHost(),
+                config,
+                "Gather resource tab",
+                () -> templateSearchHelper.locatePattern(tileTemplate, SearchConfig.builder().build()));
+    }
+
+    private HorizontalStripSeeker.Host resourceStripHost() {
+        return new HorizontalStripSeeker.Host() {
+            @Override
+            public RawImageData captureStrip() {
+                try {
+                    return emuManager.captureScreen(EMULATOR_NUMBER);
+                } catch (RuntimeException ex) {
+                    logDebug("Gather resource strip capture unavailable: " + ex.getMessage());
+                    return null;
+                }
+            }
+
+            @Override
+            public void swipe(PointData from, PointData to, int durationMs) {
+                GatherRoutine.this.swipe(from, to, durationMs);
+            }
+
+            @Override
+            public void settle(long settleMs) {
+                sleepTask(settleMs);
+            }
+
+            @Override
+            public void debug(String message) {
+                logDebug(message);
+            }
+        };
     }
 
     private boolean setLevel(int target) {
@@ -890,7 +941,7 @@ public class GatherRoutine extends DelayedTask {
     }
 
     private void resetLevelToOne() {
-        swipe(LEVEL_SLIDER_START, LEVEL_SLIDER_END);
+        swipe(LEVEL_SLIDER_START, LEVEL_SLIDER_END, RES_TAB_SWIPE_DURATION_MS);
         sleepTask(300);
     }
 

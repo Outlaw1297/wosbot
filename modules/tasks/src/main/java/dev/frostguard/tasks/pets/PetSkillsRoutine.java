@@ -895,9 +895,9 @@ public class PetSkillsRoutine extends DelayedTask {
         tapInside(new PointData(25, 850), new PointData(67, 898));
         sleepTask(2000); // Wait for search menu to open
 
-        // Swipe left to find resource tiles tab
-        swipe(new PointData(678, 913), new PointData(40, 913));
-        sleepTask(500); // Wait for swipe animation
+        // Timed rewind — Instant default swipes do not move the resource strip.
+        swipe(new PointData(80, 913), new PointData(620, 913), 500);
+        sleepTask(700);
 
         return true;
     }
@@ -1035,10 +1035,10 @@ public class PetSkillsRoutine extends DelayedTask {
             }
 
             if (attempt < MAX_SWIPE_ATTEMPTS - 1) {
-                logDebug(String.format("Tile not found, swiping (attempt %d/%d)",
+                logDebug(String.format("Tile not found, timed swipe (attempt %d/%d)",
                         attempt + 1, MAX_SWIPE_ATTEMPTS));
-                swipe(new PointData(678, 913), new PointData(40, 913));
-                sleepTask(500); // Wait for swipe animation
+                swipe(new PointData(678, 913), new PointData(200, 913), 500);
+                sleepTask(700);
             }
         }
 

@@ -38,6 +38,21 @@ class NavigationHelperEventTabScrollTest {
         assertTrue(ImageRegionStability.unchanged(frame, frame, NavigationHelper.EVENT_TAB_STRIP_AREA));
     }
 
+    @Test
+    void dealsTabSwipesMirrorEventsTimedEdgeSeekGeometry() {
+        PointData searchTopLeft = NavigationHelper.DEALS_TAB_STRIP_AREA.topLeft();
+        PointData searchBottomRight = NavigationHelper.DEALS_TAB_STRIP_AREA.bottomRight();
+
+        assertTrue(isInside(searchTopLeft, searchBottomRight, NavigationHelper.DEALS_TAB_LEFT_FROM));
+        assertTrue(isInside(searchTopLeft, searchBottomRight, NavigationHelper.DEALS_TAB_LEFT_TO));
+        assertTrue(isInside(searchTopLeft, searchBottomRight, NavigationHelper.DEALS_TAB_RIGHT_FROM));
+        assertTrue(isInside(searchTopLeft, searchBottomRight, NavigationHelper.DEALS_TAB_RIGHT_TO));
+
+        assertEquals(500, NavigationHelper.DEALS_TAB_SWIPE_DURATION_MS);
+        assertEquals(2, NavigationHelper.DEALS_TAB_EDGE_STABLE_CONFIRMATIONS);
+        assertEquals(14, NavigationHelper.DEALS_TAB_MAX_SWIPES_PER_DIRECTION);
+    }
+
     private static boolean isInside(PointData topLeft, PointData bottomRight, PointData point) {
         return point.getX() >= topLeft.getX()
                 && point.getX() <= bottomRight.getX()
