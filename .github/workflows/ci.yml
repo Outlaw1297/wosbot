@@ -27,6 +27,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          # Stable baseline verification needs reachable vX.Y.Z tags.
+          fetch-tags: true
           # Binaries are ordinary blobs; do not fetch Git LFS.
           lfs: false
 

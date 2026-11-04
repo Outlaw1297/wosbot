@@ -32,6 +32,7 @@ class ChannelPackagingTest(unittest.TestCase):
         self.assertIn("  contents: read", ci)
         self.assertIn("Build and test Maven reactor", ci)
         self.assertIn("fetch-depth: 0", ci)
+        self.assertIn("fetch-tags: true", ci)
         self.assertIn("verify_development_version.py", ci)
         self.assertNotIn("contents: write", ci)
 
