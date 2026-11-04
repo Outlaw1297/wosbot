@@ -69,8 +69,9 @@ jobs:
           $releasesJson = gh release list --repo $env:GITHUB_REPOSITORY --limit 100 `
               --json tagName,isPrerelease,isDraft 2>$null
           if ($LASTEXITCODE -eq 0) {
+              # Include drafts so a failed publish still advances the sequence.
               $tags = @(($releasesJson | ConvertFrom-Json) |
-                  Where-Object { -not $_.isDraft -and $_.tagName -like 'v*-nightly-dev.*' } |
+                  Where-Object { $_.tagName -like 'v*-nightly-dev.*' } |
                   ForEach-Object { $_.tagName.TrimStart('v') })
               if ($tags.Count -gt 0) {
                   $previous = $tags[0]
@@ -255,12 +256,15 @@ jobs:
               packaging/desktop/src/main/nightly-dev/project-update-key.properties `
               modules/update/target/classes/dev/frostguard/update/project-update-key.properties
 
-          java -cp "modules/update/target/classes;modules/api/target/classes" `
+          java -cp "modules/update/target/classes" `
               dev.frostguard.update.ProjectManifestSigner sign $payload $manifest
           if ($LASTEXITCODE -ne 0) {
               throw "Nightly Dev manifest could not be signed"
           }
-          java -cp "modules/update/target/classes;modules/api/target/classes" `
+          # verify() parses JSON through Jackson from the staged runtime libs.
+          $verificationClasspath =
+              "modules/update/target/classes;modules/api/target/classes;packaging/desktop/target/input/lib/*"
+          java -cp $verificationClasspath `
               dev.frostguard.update.ProjectManifestSigner verify $manifest
           if ($LASTEXITCODE -ne 0) {
               throw "Nightly Dev signed manifest verification failed"
