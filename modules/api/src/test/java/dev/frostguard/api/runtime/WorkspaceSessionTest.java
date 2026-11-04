@@ -124,6 +124,11 @@ class WorkspaceSessionTest {
             assertTrue(new WorkspacePaths(tempDir.resolve("custom"), RuntimeChannel.STABLE)
                     .releasePeer(RuntimeChannel.NIGHTLY).isEmpty());
             assertTrue(stable.releasePeer(RuntimeChannel.DEVELOPMENT).isEmpty());
+            assertTrue(stable.releasePeer(RuntimeChannel.NIGHTLY_DEV).isEmpty());
+            Path nightlyDev = WorkspacePaths.userWorkspace(RuntimeChannel.NIGHTLY_DEV, "default");
+            assertTrue(nightlyDev.toString().replace('\\', '/').contains("/workspaces/nightly_dev/"));
+            assertThrows(IllegalArgumentException.class,
+                    () -> WorkspacePaths.userWorkspace(RuntimeChannel.DEVELOPMENT, "default"));
         } finally {
             restore("user.home", oldHome);
         }

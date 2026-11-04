@@ -1,7 +1,7 @@
 param(
     [Parameter(Mandatory = $true)]
     [string]$ImagePath,
-    [ValidateSet("stable", "nightly")]
+    [ValidateSet("stable", "nightly", "nightly_dev")]
     [string]$Channel = "stable",
     [string]$ProductName = "Frostguard",
     [string]$BootstrapProductName = $ProductName
@@ -10,7 +10,11 @@ param(
 $ErrorActionPreference = "Stop"
 $image = (Resolve-Path -LiteralPath $ImagePath).Path
 $appLauncher = Join-Path $image "$ProductName.exe"
-$watcherName = if ($Channel -eq "nightly") { "FrostguardNightlyWatcher" } else { "FrostguardWatcher" }
+$watcherName = switch ($Channel) {
+    "nightly" { "FrostguardNightlyWatcher" }
+    "nightly_dev" { "FrostguardNightlyDevWatcher" }
+    default { "FrostguardWatcher" }
+}
 $watcherLauncher = Join-Path $image "$watcherName.exe"
 if (-not (Test-Path -LiteralPath $appLauncher -PathType Leaf)) {
     throw "$ProductName.exe is missing from $image"
@@ -66,10 +70,10 @@ try {
             $appEvidence[$matches[1]] = $matches[2]
         }
     }
-    $expectedApplicationId = if ($Channel -eq "nightly") {
-        "dev.frostguard.desktop.nightly"
-    } else {
-        "dev.frostguard.desktop"
+    $expectedApplicationId = switch ($Channel) {
+        "nightly" { "dev.frostguard.desktop.nightly" }
+        "nightly_dev" { "dev.frostguard.desktop.nightly_dev" }
+        default { "dev.frostguard.desktop" }
     }
     if ($appEvidence["channel"] -ne $Channel -or
             $appEvidence["applicationId"] -ne $expectedApplicationId -or

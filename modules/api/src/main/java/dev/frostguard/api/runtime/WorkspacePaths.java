@@ -44,8 +44,9 @@ public record WorkspacePaths(Path root, RuntimeChannel channel) {
     }
 
     public static Path userWorkspace(RuntimeChannel channel, String name) {
-        if (channel == null || !channel.isPublicRelease()) {
-            throw new IllegalArgumentException("Only Stable and Nightly use installed user workspaces");
+        if (channel == null || !channel.usesInstalledWorkspace()) {
+            throw new IllegalArgumentException(
+                    "Only Stable, Nightly, and Nightly Dev use installed user workspaces");
         }
         if (name == null || name.isBlank() || name.equals(".") || name.equals("..")
                 || name.contains("/") || name.contains("\\")) {

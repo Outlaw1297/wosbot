@@ -69,7 +69,14 @@ def inspect_image(
         for path in image.rglob("*")
         if path.is_file()
     }
-    watcher_name = "FrostguardNightlyWatcher" if channel == "nightly" else "FrostguardWatcher"
+    watcher_name = {
+        "nightly": "FrostguardNightlyWatcher",
+        "nightly_dev": "FrostguardNightlyDevWatcher",
+    }.get(channel, "FrostguardWatcher")
+    application_id = {
+        "nightly": "dev.frostguard.desktop.nightly",
+        "nightly_dev": "dev.frostguard.desktop.nightly_dev",
+    }.get(channel, "dev.frostguard.desktop")
     required_files = (
         *STATIC_REQUIRED_FILES,
         f"{product_name}.exe",
@@ -114,7 +121,7 @@ def inspect_image(
 
     common_java_options = (
         f"java-options=-Dfrostguard.channel={channel}",
-        f"java-options=-Dfrostguard.application.id=dev.frostguard.desktop{'.nightly' if channel == 'nightly' else ''}",
+        f"java-options=-Dfrostguard.application.id={application_id}",
         "java-options=-Duser.dir=$APPDIR",
         f"java-options=-Dfrostguard.watcher.launcher=$APPDIR/../{watcher_name}.exe",
     )
@@ -240,7 +247,8 @@ def _is_utc_build_time(value: str) -> bool:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("image", type=Path)
-    parser.add_argument("--channel", choices=("stable", "nightly"), default="stable")
+    parser.add_argument(
+        "--channel", choices=("stable", "nightly", "nightly_dev"), default="stable")
     parser.add_argument("--product-name", default="Frostguard")
     parser.add_argument("--expected-desktop-launcher-sha256", default="")
     parser.add_argument("--expected-watcher-launcher-sha256", default="")

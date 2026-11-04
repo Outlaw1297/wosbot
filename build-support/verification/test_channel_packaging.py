@@ -97,16 +97,35 @@ class ChannelPackagingTest(unittest.TestCase):
             "frostguard.product.install-dir": "Frostguard Nightly",
             "frostguard.watcher.name": "FrostguardNightlyWatcher",
         }
+        nightly_dev_profile = next(
+            profile for profile in root.findall("m:profiles/m:profile", NS)
+            if profile.find("m:id", NS).text == "windows-nightly-dev"
+        )
+        nightly_dev = properties(nightly_dev_profile)
+        expected_nightly_dev = {
+            "frostguard.release.channel": "nightly_dev",
+            "frostguard.product.name": "Frostguard Nightly Dev",
+            "frostguard.product.identifier": "dev.frostguard.desktop.nightly_dev",
+            "frostguard.product.install-dir": "Frostguard Nightly Dev",
+            "frostguard.watcher.name": "FrostguardNightlyDevWatcher",
+            "frostguard.pull-request-build": "true",
+        }
         for key, value in expected_stable.items():
             self.assertEqual(value, stable[key])
         for key, value in expected_nightly.items():
             self.assertEqual(value, nightly[key])
+        for key, value in expected_nightly_dev.items():
+            self.assertEqual(value, nightly_dev[key])
         self.assertNotEqual(stable["frostguard.product.upgrade-uuid"],
                             nightly["frostguard.product.upgrade-uuid"])
+        self.assertNotEqual(nightly["frostguard.product.upgrade-uuid"],
+                            nightly_dev["frostguard.product.upgrade-uuid"])
         self.assertEqual("2.1.0",
                          stable["frostguard.windows.launcher-version"])
         self.assertEqual("26.8.12004",
                          nightly["frostguard.windows.launcher-version"])
+        self.assertEqual("26.8.12004",
+                         nightly_dev["frostguard.windows.launcher-version"])
 
         pom = (REPO_ROOT / "packaging/desktop/pom.xml").read_text(encoding="utf-8")
         for contract in (

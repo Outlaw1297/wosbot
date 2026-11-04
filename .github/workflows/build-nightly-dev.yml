@@ -1,0 +1,120 @@
+name: Build — Windows Nightly Dev
+
+# Side-by-side verification MSI for fork testing. Distinct from Stable/Nightly:
+# channel nightly_dev, product "Frostguard Nightly Dev", separate upgrade UUID
+# and ~/.frostguard/workspaces/nightly_dev/.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "cursor/fix-character-roster-scroll-b3cb"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-nightly-dev-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  MAVEN_ARGS: "-B --no-transfer-progress -Dstyle.color=never"
+
+jobs:
+  package:
+    name: Build Frostguard Nightly Dev Windows installer
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          lfs: false
+
+      - name: Verify shipped binaries are real files
+        shell: bash
+        run: build-support/verification/check_lfs_assets.sh
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21.0.12+8.0.LTS"
+          cache: maven
+
+      - name: Install WiX Toolset 3
+        shell: pwsh
+        run: |
+          choco install wixtoolset --version=3.14.1.20250415 --no-progress -y
+          $wixBin = "${env:ProgramFiles(x86)}\WiX Toolset v3.14\bin"
+          if (-not (Test-Path -LiteralPath (Join-Path $wixBin "candle.exe"))) {
+              throw "WiX candle.exe was not installed below $wixBin"
+          }
+          $wixBin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Build Nightly Dev application image
+        shell: pwsh
+        run: |
+          $mavenArgs = $env:MAVEN_ARGS -split " "
+          & .\mvnw.cmd @mavenArgs `
+              "-Pwindows-app-image,windows-nightly-dev" package
+
+      - name: Test packaging verifiers
+        run: |
+          python build-support/verification/test_verify_app_image.py
+          python build-support/verification/test_channel_packaging.py
+
+      - name: Verify Nightly Dev application image
+        run: >-
+          python build-support/verification/verify_app_image.py
+          "packaging/desktop/target/app-image/Frostguard Nightly Dev"
+          --channel nightly_dev
+          --product-name "Frostguard Nightly Dev"
+          --expected-desktop-launcher-sha256 5c728d3662d64c428d003874f6d62b798bbbe329f595b2b15a2ab5ab1fd1faa9
+          --expected-watcher-launcher-sha256 9c7452d890f39c7f4fdb2e5519993514c84f071deef222fe49784acfd459c209
+
+      - name: Smoke test Nightly Dev launchers and workspace isolation
+        shell: pwsh
+        run: |
+          powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass `
+              -File build-support/verification/smoke_test_app_image.ps1 `
+              -ImagePath "packaging/desktop/target/app-image/Frostguard Nightly Dev" `
+              -Channel nightly_dev `
+              -ProductName "Frostguard Nightly Dev" `
+              -BootstrapProductName "Frostguard Nightly"
+
+      - name: Build Nightly Dev installer from verified application image
+        shell: pwsh
+        run: |
+          $mavenArgs = $env:MAVEN_ARGS -split " "
+          & .\mvnw.cmd @mavenArgs -pl packaging/desktop -am -DskipTests `
+              "-Pwindows-installer,windows-nightly-dev" package
+
+      - name: Verify Nightly Dev installer boundary
+        id: installer
+        shell: pwsh
+        run: |
+          $installers = @(Get-ChildItem `
+              -LiteralPath packaging/desktop/target/installers/nightly_dev `
+              -Filter "Frostguard Nightly Dev-*.msi" -File)
+          if ($installers.Count -ne 1) {
+              throw "Expected exactly one Nightly Dev installer, found $($installers.Count)"
+          }
+          if ($installers[0].Length -lt 1MB) {
+              throw "Nightly Dev installer is unexpectedly small: $($installers[0].Length) bytes"
+          }
+          "path=$($installers[0].FullName)" | Out-File `
+              -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "name=$($installers[0].Name)" | Out-File `
+              -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Upload Nightly Dev installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: frostguard-nightly-dev-windows-installer
+          path: ${{ steps.installer.outputs.path }}
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14

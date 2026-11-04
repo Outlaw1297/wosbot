@@ -4,6 +4,7 @@ import java.util.Locale;
 
 public enum RuntimeChannel {
     DEVELOPMENT("Development", "Frostguard Development", "dev.frostguard.desktop.development"),
+    NIGHTLY_DEV("Nightly Dev", "Frostguard Nightly Dev", "dev.frostguard.desktop.nightly_dev"),
     NIGHTLY("Nightly", "Frostguard Nightly", "dev.frostguard.desktop.nightly"),
     STABLE("Stable", "Frostguard", "dev.frostguard.desktop");
 
@@ -37,12 +38,17 @@ public enum RuntimeChannel {
         return this == STABLE || this == NIGHTLY;
     }
 
+    // Installed MSI/app-image builds that own ~/.frostguard/workspaces/<channel>/.
+    public boolean usesInstalledWorkspace() {
+        return isPublicRelease() || this == NIGHTLY_DEV;
+    }
+
     public RuntimeChannel alternateRelease() {
         return switch (this) {
             case STABLE -> NIGHTLY;
             case NIGHTLY -> STABLE;
-            case DEVELOPMENT -> throw new IllegalStateException(
-                    "Development has no public release-channel counterpart");
+            case DEVELOPMENT, NIGHTLY_DEV -> throw new IllegalStateException(
+                    displayName + " has no public release-channel counterpart");
         };
     }
 

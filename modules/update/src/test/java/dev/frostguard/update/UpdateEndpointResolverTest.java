@@ -23,6 +23,13 @@ class UpdateEndpointResolverTest {
     }
 
     @Test
+    void nightlyDevHasNoEndpointEvenWhenNightlyFeedIsConfigured() throws Exception {
+        System.setProperty(UpdateEndpointResolver.NIGHTLY_PROPERTY,
+                "https://updates.example.com/nightly.json");
+        assertFalse(resolver.resolve(RuntimeChannel.NIGHTLY_DEV).isPresent());
+    }
+
+    @Test
     void resolvesChannelSpecificHttpsEndpoint() throws Exception {
         System.setProperty(UpdateEndpointResolver.STABLE_PROPERTY, "https://updates.example.com/stable.json");
         assertEquals("https://updates.example.com/stable.json",

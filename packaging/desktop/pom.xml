@@ -387,5 +387,22 @@
                 <frostguard.product.upgrade-uuid>51ac745d-78e4-4d89-a36d-1c38b87598b3</frostguard.product.upgrade-uuid>
             </properties>
         </profile>
+
+        <!-- Side-by-side fork/dev MSI that never shares Nightly's install identity
+             or workspace. Marks itself as a PR-test build so release updates stay off. -->
+        <profile>
+            <id>windows-nightly-dev</id>
+            <properties>
+                <frostguard.release.channel>nightly_dev</frostguard.release.channel>
+                <frostguard.pull-request-build>true</frostguard.pull-request-build>
+                <frostguard.windows.launcher-version>26.8.12004</frostguard.windows.launcher-version>
+                <frostguard.product.name>Frostguard Nightly Dev</frostguard.product.name>
+                <frostguard.product.identifier>dev.frostguard.desktop.nightly_dev</frostguard.product.identifier>
+                <frostguard.product.description>Frostguard Nightly Dev verification desktop application</frostguard.product.description>
+                <frostguard.product.install-dir>Frostguard Nightly Dev</frostguard.product.install-dir>
+                <frostguard.watcher.name>FrostguardNightlyDevWatcher</frostguard.watcher.name>
+                <frostguard.product.upgrade-uuid>c7c010bb-b66a-405e-8b68-f077edb074b8</frostguard.product.upgrade-uuid>
+            </properties>
+        </profile>
     </profiles>
 </project>

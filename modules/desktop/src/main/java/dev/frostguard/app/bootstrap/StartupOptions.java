@@ -37,9 +37,9 @@ record StartupOptions(boolean headless, boolean nativeSmokeTest, String workspac
         if (workspaceName == null) {
             return current;
         }
-        if (!current.channel().isPublicRelease()) {
+        if (!current.channel().usesInstalledWorkspace()) {
             throw new IllegalArgumentException(
-                    "--workspace is available for installed Stable and Nightly builds only; "
+                    "--workspace is available for installed Stable, Nightly, and Nightly Dev builds only; "
                             + "development launches already use a worktree-local workspace");
         }
         return new WorkspacePaths(

@@ -119,6 +119,17 @@ python build-support/verification/verify_app_image.py `
   --channel nightly --product-name "Frostguard Nightly"
 ```
 
+Add `windows-nightly-dev` for a side-by-side verification install that does not
+share Nightly's product identity, upgrade UUID, or workspace
+(`~/.frostguard/workspaces/nightly_dev/`). It disables release updates:
+
+```powershell
+.\mvnw.cmd "-Pwindows-app-image,windows-installer,windows-nightly-dev" package
+python build-support/verification/verify_app_image.py `
+  "packaging/desktop/target/app-image/Frostguard Nightly Dev" `
+  --channel nightly_dev --product-name "Frostguard Nightly Dev"
+```
+
 ## Runtime Requirements
 
 Configure the emulator for a stable `720x1280` display at `320 DPI`. MuMu Player is recommended.

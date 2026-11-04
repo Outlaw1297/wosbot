@@ -10,7 +10,7 @@ public final class UpdateEndpointResolver {
     public static final String NIGHTLY_PROPERTY = "frostguard.update.manifest.nightly";
 
     public Optional<URI> resolve(RuntimeChannel channel) throws UpdateException {
-        if (channel == RuntimeChannel.DEVELOPMENT) {
+        if (channel == null || !channel.isPublicRelease()) {
             return Optional.empty();
         }
         String property = channel == RuntimeChannel.STABLE ? STABLE_PROPERTY : NIGHTLY_PROPERTY;
