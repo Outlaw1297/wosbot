@@ -107,6 +107,21 @@ jobs:
               "-Dfrostguard.windows.app-version=$($env:WINDOWS_VERSION)" `
               "-Pwindows-app-image,windows-nightly-dev" package
 
+      - name: Build accepted Nightly bootstrap donor for Nightly Dev
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.identity.outputs.version }}
+          WINDOWS_VERSION: ${{ steps.identity.outputs.windows_version }}
+        run: |
+          $mavenArgs = $env:MAVEN_ARGS -split " "
+          & .\mvnw.cmd @mavenArgs -pl packaging/desktop -am -DskipTests `
+              "-Drevision=$($env:VERSION)" `
+              "-Dfrostguard.windows.app-version=$($env:WINDOWS_VERSION)" `
+              "-Pwindows-app-image,windows-nightly" package
+          & build-support/packaging/use_nightly_bootstrap_for_nightly_dev.ps1 `
+              -NightlyDevImage "packaging/desktop/target/app-image/Frostguard Nightly Dev" `
+              -NightlyImage "packaging/desktop/target/app-image/Frostguard Nightly"
+
       - name: Test packaging verifiers
         run: |
           python build-support/verification/test_verify_app_image.py
