@@ -121,8 +121,13 @@ class EventStripMenuVisitTest {
     }
 
     @Test
-    void allianceMobilizationRetriesAMissingTabOnceThenWaitsForTheDailyReset() {
-        assertOneExtraVisitThenReset(new MobilizationProbe());
+    void allianceMobilizationMissingTabSkipsUntilNextUtcDay() {
+        MobilizationProbe probe = new MobilizationProbe();
+        probe.respond(EventMenuOpenResult.TAB_ABSENT);
+        assertEquals(probe.rest(), probe.scheduledAt());
+        assertTrue(probe.warning().contains("Skipping until next UTC day"));
+        assertTrue(probe.warning().contains("not completed"));
+        assertTrue(probe.warning().contains("snapshot=test"));
     }
 
     private static void assertOneExtraVisitThenReset(Probe probe) {

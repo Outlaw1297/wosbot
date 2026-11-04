@@ -11,7 +11,6 @@ import dev.frostguard.api.domain.OcrSettingsData;
 import dev.frostguard.engine.helper.NavigationHelper.EventMenu;
 import dev.frostguard.engine.helper.NavigationHelper.EventMenuOpenResult;
 import dev.frostguard.engine.helper.TemplateSearchHelper.SearchConfig;
-import dev.frostguard.tasks.events.EventMenuRetryState;
 import dev.frostguard.tasks.events.EventPeriodVisit;
 import dev.frostguard.engine.schedule.DelayedTask;
 import dev.frostguard.engine.schedule.LaunchPoint;
@@ -161,8 +160,6 @@ private int consecutiveNoMissionsCount = 0;
 
 private int consecutiveOnlyRunningMissionCount = 0;
 
-private final EventMenuRetryState menuRetry = new EventMenuRetryState();
-
 public AllianceMobilizationRoutine(AccountDescriptor profile, TpDailyTaskEnum tpTask) {
         super(profile, tpTask);
     }
@@ -177,7 +174,6 @@ public AllianceMobilizationRoutine(AccountDescriptor profile, TpDailyTaskEnum tp
             respondToMenu(opened);
             return;
         }
-        menuRetry.found();
 
         AttemptStatusShape attemptStatus = scanAttemptsCounter();
 
@@ -646,7 +642,6 @@ private AttemptStatusShape decodeZeroAttemptsFormat(String normalized) {
 
 protected void respondToMenu(EventMenuOpenResult opened) {
         if (opened == EventMenuOpenResult.REACHED) {
-            menuRetry.found();
             return;
         }
         if (opened == EventMenuOpenResult.PANEL_CLOSED) {
@@ -657,17 +652,14 @@ protected void respondToMenu(EventMenuOpenResult opened) {
             return;
         }
 
-        EventMenuRetryState.Choice choice = menuRetry.choose(LocalDateTime.now(), GameTimeUtils.dailyResetTime());
-        String snapshot = diagnosticSnapshot("event-navigation");
-        if (!choice.resting()) {
-            logWarning(routineLogAllianceMobilizationLine("Alliance Mobilization tab was not in view. One more menu visit at "
-                    + choice.at().format(DATETIME_FORMATTER) + "; " + snapshot + "."));
-        } else {
-            logWarning(routineLogAllianceMobilizationLine(
-                    "Alliance Mobilization tab was still not in view after the extra menu visit. Next visit at "
-                            + choice.at().format(DATETIME_FORMATTER) + "; event was not completed; " + snapshot + "."));
-        }
-        reschedule(choice.at());
+        // Monthly event: a missing tab is not a soft retry loop. Skip until next 00:00 UTC
+        // so this profile yields the global emulator slot to the rest of the fleet.
+        LocalDateTime nextCheck = GameTimeUtils.dailyResetTime();
+        logWarning(routineLogAllianceMobilizationLine(
+                "Alliance Mobilization tab was not in view. Skipping until next UTC day at "
+                        + nextCheck.format(DATETIME_FORMATTER) + "; event was not completed; "
+                        + diagnosticSnapshot("event-navigation") + "."));
+        reschedule(nextCheck);
     }
 
 protected String diagnosticSnapshot(String type) {
@@ -830,9 +822,11 @@ private EventMenuOpenResult navigateWithRetryFlow() {
             if (opened == EventMenuOpenResult.REACHED) {
                 return opened;
             }
+            // Missing monthly tab will not appear after more strip walks this session.
             if (opened == EventMenuOpenResult.TAB_ABSENT) {
-                last = opened;
+                return opened;
             }
+            last = opened;
 
             if (attempt < RoutineLimits.MAX_NAVIGATION_ATTEMPTS) {
                 logWarning(routineLogAllianceMobilizationLine("Navigation did not complete. Returning to home screen and retrying..."));
