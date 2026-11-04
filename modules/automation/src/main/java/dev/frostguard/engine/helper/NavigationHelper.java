@@ -23,6 +23,7 @@ import dev.frostguard.engine.schedule.LaunchPoint;
 import dev.frostguard.engine.service.LoggingService;
 import dev.frostguard.vision.logging.ProfileContextLogger;
 import dev.frostguard.vision.convert.ImageConverter;
+import dev.frostguard.vision.match.ImageRegionStability;
 
 import java.time.Instant;
 
@@ -49,15 +50,20 @@ public class NavigationHelper {
 
     private static final PointData EVENT_TAB_SEARCH_TOP_LEFT = new PointData(0, 80);
     private static final PointData EVENT_TAB_SEARCH_BOTTOM_RIGHT = new PointData(720, 210);
+    static final AreaData EVENT_TAB_STRIP_AREA = area(0, 80, 720, 210);
     // Horizontal Events strip ignores instant default swipes; use sidebar-like timing.
-    static final PointData EVENT_TAB_RESET_FROM = new PointData(80, 120);
-    static final PointData EVENT_TAB_RESET_TO = new PointData(578, 130);
-    static final PointData EVENT_TAB_SCAN_FROM = new PointData(630, 143);
-    static final PointData EVENT_TAB_SCAN_TO = new PointData(280, 143);
-    static final int EVENT_TAB_RESET_SWIPES = 3;
-    static final int EVENT_TAB_SCAN_SWIPES = 8;
+    // The strip is dynamic (tab count/order changes) and may open mid-list, so seeking
+    // rewinds left until the header stops changing, then walks right by a fixed pull
+    // until the header stops changing again. OCR of icon tabs is unreliable; strip
+    // identity uses ImageRegionStability instead.
+    static final PointData EVENT_TAB_LEFT_FROM = new PointData(80, 120);
+    static final PointData EVENT_TAB_LEFT_TO = new PointData(578, 130);
+    static final PointData EVENT_TAB_RIGHT_FROM = new PointData(630, 143);
+    static final PointData EVENT_TAB_RIGHT_TO = new PointData(280, 143);
     static final int EVENT_TAB_SWIPE_DURATION_MS = 500;
     static final long EVENT_TAB_SETTLE_MS = 1000L;
+    static final int EVENT_TAB_EDGE_STABLE_CONFIRMATIONS = 2;
+    static final int EVENT_TAB_MAX_SWIPES_PER_DIRECTION = 14;
     private static final AreaData LABYRINTH_LEADERBOARD = area(646, 185, 704, 264);
     private static final AreaData LABYRINTH_CATEGORY = area(90, 190, 320, 450);
     private static final AreaData ALLIANCE_POWER_RANKINGS = area(80, 1035, 290, 1100);
@@ -556,27 +562,7 @@ public class NavigationHelper {
             case TUNDRA_TRUCK -> TemplatesEnum.TUNDRA_TRUCK_TAB;
         };
 
-        // The horizontal event strip continues moving after the swipe gesture returns. Searching during
-        // that animation can miss even a 97% match, so settle fully and inspect only the header strip.
-        ImageSearchResultData tab = locateEventTab(event, tpl);
-        if (!tab.isFound()) {
-            for (int i = 0; i < EVENT_TAB_RESET_SWIPES && !tab.isFound(); i++) {
-                broadcastDebug("Event tab reset swipe " + (i + 1) + "/" + EVENT_TAB_RESET_SWIPES
-                        + " durationMs=" + EVENT_TAB_SWIPE_DURATION_MS);
-                emu.swipeScreen(device, EVENT_TAB_RESET_FROM, EVENT_TAB_RESET_TO, EVENT_TAB_SWIPE_DURATION_MS);
-                interruptibleWait(EVENT_TAB_SETTLE_MS);
-                tab = locateEventTab(event, tpl);
-            }
-
-            for (int i = 0; i < EVENT_TAB_SCAN_SWIPES && !tab.isFound(); i++) {
-                broadcastDebug("Event tab scan swipe " + (i + 1) + "/" + EVENT_TAB_SCAN_SWIPES
-                        + " durationMs=" + EVENT_TAB_SWIPE_DURATION_MS);
-                emu.swipeScreen(device, EVENT_TAB_SCAN_FROM, EVENT_TAB_SCAN_TO, EVENT_TAB_SWIPE_DURATION_MS);
-                interruptibleWait(EVENT_TAB_SETTLE_MS);
-                tab = locateEventTab(event, tpl);
-            }
-        }
-
+        ImageSearchResultData tab = seekEventTabAcrossStrip(event, tpl);
         if (!tab.isFound()) {
             broadcastWarn("Tab not found: " + event);
             return EventMenuOpenResult.TAB_ABSENT;
@@ -586,6 +572,74 @@ public class NavigationHelper {
         interruptibleWait(1000);
         broadcastInfo("Reached " + event.name());
         return EventMenuOpenResult.REACHED;
+    }
+
+    private ImageSearchResultData seekEventTabAcrossStrip(EventMenu event, TemplatesEnum template) {
+        ImageSearchResultData tab = locateEventTab(event, template);
+        if (tab.isFound()) {
+            return tab;
+        }
+
+        // Rewind to the left edge first — Events often opens mid-list.
+        tab = swipeEventStripUntilEdgeOrFound(
+                event, template, EVENT_TAB_LEFT_FROM, EVENT_TAB_LEFT_TO, "left");
+        if (tab.isFound()) {
+            return tab;
+        }
+
+        // Walk right by a fixed pull; stop early when the tab appears or the strip stops changing.
+        return swipeEventStripUntilEdgeOrFound(
+                event, template, EVENT_TAB_RIGHT_FROM, EVENT_TAB_RIGHT_TO, "right");
+    }
+
+    private ImageSearchResultData swipeEventStripUntilEdgeOrFound(
+            EventMenu event,
+            TemplatesEnum template,
+            PointData from,
+            PointData to,
+            String direction) {
+        int stableConfirmations = 0;
+        ImageSearchResultData tab = ImageSearchResultData.miss();
+        for (int swipe = 1; swipe <= EVENT_TAB_MAX_SWIPES_PER_DIRECTION; swipe++) {
+            RawImageData before = captureEventTabStrip();
+            broadcastDebug("Event tab " + direction + " swipe " + swipe + "/"
+                    + EVENT_TAB_MAX_SWIPES_PER_DIRECTION
+                    + " durationMs=" + EVENT_TAB_SWIPE_DURATION_MS);
+            emu.swipeScreen(device, from, to, EVENT_TAB_SWIPE_DURATION_MS);
+            interruptibleWait(EVENT_TAB_SETTLE_MS);
+
+            tab = locateEventTab(event, template);
+            if (tab.isFound()) {
+                broadcastDebug("Event tab found during " + direction + " seek after swipe " + swipe);
+                return tab;
+            }
+
+            RawImageData after = captureEventTabStrip();
+            boolean unchanged = before != null && after != null
+                    && ImageRegionStability.unchanged(before, after, EVENT_TAB_STRIP_AREA);
+            if (unchanged) {
+                stableConfirmations++;
+                broadcastDebug("Event tab strip unchanged after " + direction + " swipe ("
+                        + stableConfirmations + "/" + EVENT_TAB_EDGE_STABLE_CONFIRMATIONS + ")");
+                if (stableConfirmations >= EVENT_TAB_EDGE_STABLE_CONFIRMATIONS) {
+                    broadcastDebug("Event tab strip reached " + direction + " edge");
+                    return tab;
+                }
+            } else {
+                stableConfirmations = 0;
+            }
+        }
+        broadcastDebug("Event tab " + direction + " seek hit swipe budget without a stable edge");
+        return tab;
+    }
+
+    private RawImageData captureEventTabStrip() {
+        try {
+            return emu.captureScreen(device);
+        } catch (RuntimeException ex) {
+            broadcastDebug("Event tab strip capture unavailable: " + ex.getMessage());
+            return null;
+        }
     }
 
     private ImageSearchResultData locateEventTab(EventMenu event, TemplatesEnum template) {
