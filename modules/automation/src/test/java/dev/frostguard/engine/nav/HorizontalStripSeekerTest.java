@@ -73,7 +73,7 @@ class HorizontalStripSeekerTest {
                 new PointData(578, 130),
                 new PointData(630, 143),
                 new PointData(280, 143),
-                500,
+                250,
                 0L,
                 2,
                 4);

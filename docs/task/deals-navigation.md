@@ -4,7 +4,8 @@ The Task Builder Deals node supports Bank and Journey of Light. Bank is reached
 from the Deals carousel with the same timed edge-seek used for Events: rewind
 left until the header strip stops changing, then walk right by a fixed pull
 until the Bank tab appears or the strip stops changing again. Instant default
-swipes do not move this carousel. Navigation taps the detected Bank tab only
+swipes do not move this carousel; a 500 ms timed pull overshoots and skips tabs,
+so the shared strip seek uses 250 ms. Navigation taps the detected Bank tab only
 inside the tab strip and succeeds only when a bank deposit control is visible.
 Journey of Light is detected by either its selected or unselected tab template,
 then its main event tab is selected. These navigation actions and destination

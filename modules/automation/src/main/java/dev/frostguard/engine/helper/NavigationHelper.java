@@ -42,7 +42,8 @@ public class NavigationHelper {
     static final PointData DEALS_TAB_LEFT_TO = new PointData(578, 130);
     static final PointData DEALS_TAB_RIGHT_FROM = new PointData(630, 143);
     static final PointData DEALS_TAB_RIGHT_TO = new PointData(280, 143);
-    static final int DEALS_TAB_SWIPE_DURATION_MS = 500;
+    // 500ms overshot and skipped tabs; 250ms matches other controlled list scrolls.
+    static final int DEALS_TAB_SWIPE_DURATION_MS = 250;
     static final long DEALS_TAB_SETTLE_MS = 1000L;
     static final int DEALS_TAB_EDGE_STABLE_CONFIRMATIONS = 2;
     static final int DEALS_TAB_MAX_SWIPES_PER_DIRECTION = 14;
@@ -58,7 +59,8 @@ public class NavigationHelper {
     private static final PointData EVENT_TAB_SEARCH_TOP_LEFT = new PointData(0, 80);
     private static final PointData EVENT_TAB_SEARCH_BOTTOM_RIGHT = new PointData(720, 210);
     static final AreaData EVENT_TAB_STRIP_AREA = area(0, 80, 720, 210);
-    // Horizontal Events strip ignores instant default swipes; use sidebar-like timing.
+    // Horizontal Events strip ignores instant default swipes; use a short timed pull.
+    // 500ms overshot and skipped tabs; 250ms matches other controlled list scrolls.
     // The strip is dynamic (tab count/order changes) and may open mid-list, so seeking
     // rewinds left until the header stops changing, then walks right by a fixed pull
     // until the header stops changing again. OCR of icon tabs is unreliable; strip
@@ -67,7 +69,7 @@ public class NavigationHelper {
     static final PointData EVENT_TAB_LEFT_TO = new PointData(578, 130);
     static final PointData EVENT_TAB_RIGHT_FROM = new PointData(630, 143);
     static final PointData EVENT_TAB_RIGHT_TO = new PointData(280, 143);
-    static final int EVENT_TAB_SWIPE_DURATION_MS = 500;
+    static final int EVENT_TAB_SWIPE_DURATION_MS = 250;
     static final long EVENT_TAB_SETTLE_MS = 1000L;
     static final int EVENT_TAB_EDGE_STABLE_CONFIRMATIONS = 2;
     static final int EVENT_TAB_MAX_SWIPES_PER_DIRECTION = 14;

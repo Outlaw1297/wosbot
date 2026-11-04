@@ -98,7 +98,8 @@ public class GatherRoutine extends DelayedTask {
     static final PointData RES_TAB_LEFT_TO = new PointData(620, 913);
     static final PointData RES_TAB_RIGHT_FROM = new PointData(678, 913);
     static final PointData RES_TAB_RIGHT_TO = new PointData(200, 913);
-    static final int RES_TAB_SWIPE_DURATION_MS = 500;
+    // Shared with Events/Deals strip seek; 500ms skipped resource tabs.
+    static final int RES_TAB_SWIPE_DURATION_MS = 250;
     static final long RES_TAB_SETTLE_MS = 700L;
     static final int RES_TAB_EDGE_STABLE_CONFIRMATIONS = 2;
     static final int RES_TAB_MAX_SWIPES_PER_DIRECTION = 8;

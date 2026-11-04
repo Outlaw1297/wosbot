@@ -25,7 +25,7 @@ class NavigationHelperEventTabScrollTest {
         assertTrue(NavigationHelper.EVENT_TAB_RIGHT_FROM.getX() > NavigationHelper.EVENT_TAB_RIGHT_TO.getX());
         assertEquals(NavigationHelper.EVENT_TAB_RIGHT_FROM.getY(), NavigationHelper.EVENT_TAB_RIGHT_TO.getY());
 
-        assertEquals(500, NavigationHelper.EVENT_TAB_SWIPE_DURATION_MS);
+        assertEquals(250, NavigationHelper.EVENT_TAB_SWIPE_DURATION_MS);
         assertEquals(2, NavigationHelper.EVENT_TAB_EDGE_STABLE_CONFIRMATIONS);
         assertEquals(14, NavigationHelper.EVENT_TAB_MAX_SWIPES_PER_DIRECTION);
         assertTrue(NavigationHelper.EVENT_TAB_RIGHT_FROM.getX() - NavigationHelper.EVENT_TAB_RIGHT_TO.getX() >= 300);
@@ -48,7 +48,7 @@ class NavigationHelperEventTabScrollTest {
         assertTrue(isInside(searchTopLeft, searchBottomRight, NavigationHelper.DEALS_TAB_RIGHT_FROM));
         assertTrue(isInside(searchTopLeft, searchBottomRight, NavigationHelper.DEALS_TAB_RIGHT_TO));
 
-        assertEquals(500, NavigationHelper.DEALS_TAB_SWIPE_DURATION_MS);
+        assertEquals(250, NavigationHelper.DEALS_TAB_SWIPE_DURATION_MS);
         assertEquals(2, NavigationHelper.DEALS_TAB_EDGE_STABLE_CONFIRMATIONS);
         assertEquals(14, NavigationHelper.DEALS_TAB_MAX_SWIPES_PER_DIRECTION);
     }

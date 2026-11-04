@@ -22,7 +22,7 @@ class GatherResourceStripScrollTest {
         assertTrue(GatherRoutine.RES_TAB_LEFT_FROM.getX() < GatherRoutine.RES_TAB_LEFT_TO.getX());
         assertTrue(GatherRoutine.RES_TAB_RIGHT_FROM.getX() > GatherRoutine.RES_TAB_RIGHT_TO.getX());
         assertEquals(GatherRoutine.RES_TAB_RIGHT_FROM.getY(), GatherRoutine.RES_TAB_RIGHT_TO.getY());
-        assertEquals(500, GatherRoutine.RES_TAB_SWIPE_DURATION_MS);
+        assertEquals(250, GatherRoutine.RES_TAB_SWIPE_DURATION_MS);
         assertEquals(2, GatherRoutine.RES_TAB_EDGE_STABLE_CONFIRMATIONS);
     }
 
