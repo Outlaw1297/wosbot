@@ -34,6 +34,7 @@ class ChannelPackagingTest(unittest.TestCase):
         self.assertIn("fetch-depth: 0", ci)
         self.assertIn("fetch-tags: true", ci)
         self.assertIn("git fetch --force --tags origin", ci)
+        self.assertIn("https://github.com/Shederator/wosbot.git", ci)
         self.assertIn("verify_development_version.py", ci)
         self.assertNotIn("contents: write", ci)
 

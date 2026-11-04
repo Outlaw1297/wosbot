@@ -25,6 +25,7 @@ env:
   MANIFEST_NAME: frostguard-nightly_dev-manifest.json
   NIGHTLY_DEV_MANIFEST_URL: https://github.com/Outlaw1297/wosbot/releases/download/nightly_dev/frostguard-nightly_dev-manifest.json
   NIGHTLY_DEV_PAGE_URL: https://github.com/Outlaw1297/wosbot/releases/tag/nightly_dev
+  GH_TOKEN: ${{ github.token }}
 
 jobs:
   package:

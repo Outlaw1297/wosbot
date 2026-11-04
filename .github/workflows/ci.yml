@@ -37,9 +37,19 @@ jobs:
 
       - name: Fetch Stable and Nightly release tags
         run: |
-          # PR checkouts can omit tag refs even with fetch-depth: 0 / fetch-tags.
-          git fetch --force --tags origin 'refs/tags/v*:refs/tags/v*'
+          # Some PR runners advertise no tag refs from origin even when the
+          # fork has them. Pull the public upstream tags whose commit SHAs are
+          # already in history, then fall back to the fork remote.
+          git fetch --force --tags https://github.com/Shederator/wosbot.git \
+            'refs/tags/v*:refs/tags/v*' || true
+          git fetch --force --tags origin 'refs/tags/v*:refs/tags/v*' || true
+          echo "Local v* tags after fetch:"
           git tag --list 'v*'
+          if ! git tag --list 'v*' | grep -q .; then
+            echo "::error::No v* tags available after upstream/origin fetch"
+            git ls-remote --tags origin 'v*' || true
+            exit 1
+          fi
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
