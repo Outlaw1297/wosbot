@@ -66,7 +66,33 @@ def reachable_tags(repo: Path) -> list[str]:
     )
     if result.returncode != 0:
         raise ValueError(f"Could not read reachable Git tags: {result.stderr.strip()}")
-    return result.stdout.splitlines()
+    merged = [line for line in result.stdout.splitlines() if line.strip()]
+    if merged:
+        return merged
+    # Some CI PR checkouts materialize tags without ancestry links to HEAD.
+    # Fall back to any local Stable tag that points at an ancestor commit.
+    listed = subprocess.run(
+        ["git", "-C", str(repo), "tag", "--list", "v*"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if listed.returncode != 0:
+        raise ValueError(f"Could not list Git tags: {listed.stderr.strip()}")
+    ancestors: list[str] = []
+    for tag in listed.stdout.splitlines():
+        tag = tag.strip()
+        if not tag:
+            continue
+        probe = subprocess.run(
+            ["git", "-C", str(repo), "merge-base", "--is-ancestor", tag, "HEAD"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if probe.returncode == 0:
+            ancestors.append(tag)
+    return ancestors
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -75,7 +101,20 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         declared = declared_revision(REPO_ROOT / "pom.xml")
-        stable_tag = latest_stable_tag(reachable_tags(REPO_ROOT))
+        tags = reachable_tags(REPO_ROOT)
+        if not tags:
+            listed = subprocess.run(
+                ["git", "-C", str(REPO_ROOT), "tag", "--list", "v*"],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            available = ", ".join(line.strip() for line in listed.stdout.splitlines() if line.strip()) or "(none)"
+            raise ValueError(
+                "Git history contains no reachable Stable vX.Y.Z tag; "
+                f"available local v* tags: {available}"
+            )
+        stable_tag = latest_stable_tag(tags)
         validate(declared, stable_tag, args.expected_stable)
     except (OSError, ET.ParseError, ValueError) as error:
         print(f"::error::{error}", file=sys.stderr)
