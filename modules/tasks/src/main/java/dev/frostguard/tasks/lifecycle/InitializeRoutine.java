@@ -81,6 +81,11 @@ public class InitializeRoutine extends DelayedTask {
 	private static final PointData WELCOME_BACK_TITLE_AREA_BOTTOM_RIGHT = new PointData(550, 340);
 	private static final PointData WELCOME_BACK_CONFIRM_AREA_TOP_LEFT = new PointData(150, 880);
 	private static final PointData WELCOME_BACK_CONFIRM_AREA_BOTTOM_RIGHT = new PointData(570, 1140);
+	// "You're getting popular!" ribbon + blue Amazing! dismiss control on 720x1280.
+	private static final PointData GETTING_POPULAR_TITLE_AREA_TOP_LEFT = new PointData(120, 250);
+	private static final PointData GETTING_POPULAR_TITLE_AREA_BOTTOM_RIGHT = new PointData(600, 430);
+	private static final PointData GETTING_POPULAR_AMAZING_AREA_TOP_LEFT = new PointData(150, 760);
+	private static final PointData GETTING_POPULAR_AMAZING_AREA_BOTTOM_RIGHT = new PointData(570, 920);
 	private static final PointData UPDATE_TITLE_AREA_TOP_LEFT = new PointData(250, 250);
 	private static final PointData UPDATE_TITLE_AREA_BOTTOM_RIGHT = new PointData(470, 350);
 	private static final PointData UPDATE_BUTTON_AREA_TOP_LEFT = new PointData(200, 850);
@@ -95,6 +100,7 @@ public class InitializeRoutine extends DelayedTask {
 	private static final int UPDATE_PROGRESS_LOG_INTERVAL = 12;
 	private static final String GOOGLE_PLAY_PACKAGE = "com.android.vending";
 	private static final int MAX_WELCOME_BACK_DISMISSALS = 1;
+	private static final int MAX_GETTING_POPULAR_DISMISSALS = 2;
 	private static final int MAX_CLOSEABLE_OVERLAY_DISMISSALS = 3;
 	private static final int MAX_TREK_EXIT_HINT_DISMISSALS = 3;
 	private static final int UNKNOWN_BLOCKER_BACK_SETTLE_MS = 2000;
@@ -109,6 +115,7 @@ public class InitializeRoutine extends DelayedTask {
 	boolean isStarted = false;
 	private int unknownBlockerBackAttempts = 0;
 	private int welcomeBackDismissals = 0;
+	private int gettingPopularDismissals = 0;
 	private int closeableOverlayDismissals = 0;
 	private int trekExitHintDismissals = 0;
 	private String lastVerifiedStartupState = "initialization started";
@@ -347,6 +354,13 @@ public class InitializeRoutine extends DelayedTask {
 				continue;
 			}
 
+			if (dismissGettingPopularIfPresent()) {
+				logInfo("Verified Getting Popular dialog dismissed. Waiting for home/world postcondition.");
+				sleepTask(2000);
+				attempts++;
+				continue;
+			}
+
 			MandatoryUpdateResult updateResult = followMandatoryUpdateIfPresent();
 			if (updateResult == MandatoryUpdateResult.COMPLETED) {
 				homeScreenFound = true;
@@ -439,6 +453,10 @@ public class InitializeRoutine extends DelayedTask {
 
 			if (dismissWelcomeBackIfPresent()) {
 				logInfo("Verified Welcome back dialog dismissed during the game update flow.");
+				continue;
+			}
+			if (dismissGettingPopularIfPresent()) {
+				logInfo("Verified Getting Popular dialog dismissed during the game update flow.");
 				continue;
 			}
 			if (dismissCloseableStartupOverlayIfPresent()) {
@@ -534,6 +552,50 @@ public class InitializeRoutine extends DelayedTask {
 			return false;
 		}
 		lastVerifiedStartupState = "Welcome back Confirm action sent";
+		return true;
+	}
+
+	private boolean dismissGettingPopularIfPresent() {
+		if (gettingPopularDismissals >= MAX_GETTING_POPULAR_DISMISSALS) {
+			return false;
+		}
+
+		RawImageData capture = captureStartupFrame("Getting Popular dialog inspection");
+		if (capture == null) {
+			return false;
+		}
+		ImageSearchResultData title = OpenCvPatternLocator.locatePattern(
+				capture,
+				TemplatesEnum.GAME_START_GETTING_POPULAR_TITLE.getTemplate(),
+				GETTING_POPULAR_TITLE_AREA_TOP_LEFT,
+				GETTING_POPULAR_TITLE_AREA_BOTTOM_RIGHT,
+				UPDATE_PATTERN_THRESHOLD);
+		ImageSearchResultData amazing = OpenCvPatternLocator.locatePattern(
+				capture,
+				TemplatesEnum.GAME_START_GETTING_POPULAR_AMAZING_BUTTON.getTemplate(),
+				GETTING_POPULAR_AMAZING_AREA_TOP_LEFT,
+				GETTING_POPULAR_AMAZING_AREA_BOTTOM_RIGHT,
+				UPDATE_PATTERN_THRESHOLD);
+		if (!title.isFound() || !amazing.isFound()) {
+			return false;
+		}
+
+		gettingPopularDismissals++;
+		lastVerifiedStartupState = "Getting Popular dialog and Amazing button";
+		logInfo("Getting Popular startup dialog and Amazing action verified from one fresh frame"
+				+ "; titlePattern=" + String.format(java.util.Locale.ROOT, "%.1f", title.getMatchScore())
+				+ "%"
+				+ "; amazingPattern=" + String.format(java.util.Locale.ROOT, "%.1f", amazing.getMatchScore())
+				+ "%"
+				+ "; dismissal=" + gettingPopularDismissals + "/" + MAX_GETTING_POPULAR_DISMISSALS);
+		if (!tapInside(amazing)) {
+			logWarning("Verified Getting Popular Amazing area was unavailable for a safe tap; "
+					+ "sending Android Back as the operator-confirmed fallback.");
+			pressBack();
+			lastVerifiedStartupState = "Getting Popular Android Back fallback sent";
+			return true;
+		}
+		lastVerifiedStartupState = "Getting Popular Amazing action sent";
 		return true;
 	}
 
@@ -742,6 +804,9 @@ public class InitializeRoutine extends DelayedTask {
 			if (dismissWelcomeBackIfPresent()) {
 				logInfo("Verified Welcome back dialog dismissed after the required resource download.");
 			}
+			if (dismissGettingPopularIfPresent()) {
+				logInfo("Verified Getting Popular dialog dismissed after the required resource download.");
+			}
 			if (dismissCloseableStartupOverlayIfPresent()) {
 				logInfo("Verified closeable startup overlay dismissed after the required resource download.");
 			}
@@ -845,6 +910,10 @@ public class InitializeRoutine extends DelayedTask {
 				checkForReconnectState();
 				if (dismissWelcomeBackIfPresent()) {
 					logInfo("Verified Welcome back dialog dismissed after bounded Android Back recovery.");
+					continue;
+				}
+				if (dismissGettingPopularIfPresent()) {
+					logInfo("Verified Getting Popular dialog dismissed after bounded Android Back recovery.");
 					continue;
 				}
 				if (dismissCloseableStartupOverlayIfPresent()) {
