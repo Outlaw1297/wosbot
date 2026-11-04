@@ -234,9 +234,11 @@ public final class CommonGameAreas {
     public static final AreaData TRAVEL_TIME_OCR_AREA   = region(500, 1134, 622, 1162);
 
     // ── character identity ───────────────────────────────────────────
-
-    public static final AreaData CHARACTER_ID_OCR_AREA   = region(300, 940, 465, 980);
-    public static final AreaData CHARACTER_NAME_OCR_AREA = region(280, 890, 600, 930);
+    // Measured on LDPlayer 720x1280 Chief Profile: name sits above the ID row.
+    // The previous boxes (name y≈890–930, id y≈940–980) read the ID/power rows
+    // instead, producing live OCR like name='ID 181743604' / id='8641'.
+    public static final AreaData CHARACTER_NAME_OCR_AREA = region(277, 817, 663, 878);
+    public static final AreaData CHARACTER_ID_OCR_AREA   = region(267, 881, 501, 937);
 
     public static final AreaData PROFILE_SETTINGS_BUTTON_AREA =
             region(540, 1150, 720, 1250);

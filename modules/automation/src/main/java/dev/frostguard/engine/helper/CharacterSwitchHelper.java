@@ -247,14 +247,22 @@ public class CharacterSwitchHelper {
     }
 
     private LiveCharacter readLiveCharacter() {
-        String liveId = ocrRead(CommonGameAreas.CHARACTER_ID_OCR_AREA, idOcrCfg());
+        String liveId = digitsOnly(ocrRead(CommonGameAreas.CHARACTER_ID_OCR_AREA, idOcrCfg()));
         String liveName = ocrRead(CommonGameAreas.CHARACTER_NAME_OCR_AREA, nameOcrCfg());
-        // Loading frames sometimes OCR the ID label/value into the name strip.
+        // Loading frames or a too-low name box can OCR the ID label into the name strip.
         if (looksLikeIdLeak(liveName)) {
             log.debug("Discarding leaked ID text from name OCR: '" + liveName + "'");
             liveName = null;
         }
         return new LiveCharacter(liveName, liveId);
+    }
+
+    static String digitsOnly(String ocrText) {
+        if (blank(ocrText)) {
+            return null;
+        }
+        String digits = ocrText.replaceAll("[^0-9]", "");
+        return digits.isEmpty() ? null : digits;
     }
 
     private boolean matchesConfigured(LiveCharacter live, String wantName, String wantId) {

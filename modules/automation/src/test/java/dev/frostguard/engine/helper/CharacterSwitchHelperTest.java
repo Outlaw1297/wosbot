@@ -38,6 +38,32 @@ class CharacterSwitchHelperTest {
                 >= 5000);
     }
 
+    @Test
+    void chiefProfileIdentityRegionsKeepNameAboveIdRow() {
+        var name = CommonGameAreas.CHARACTER_NAME_OCR_AREA;
+        var id = CommonGameAreas.CHARACTER_ID_OCR_AREA;
+
+        assertEquals(277, name.topLeft().getX());
+        assertEquals(817, name.topLeft().getY());
+        assertEquals(663, name.bottomRight().getX());
+        assertEquals(878, name.bottomRight().getY());
+
+        assertEquals(267, id.topLeft().getX());
+        assertEquals(881, id.topLeft().getY());
+        assertEquals(501, id.bottomRight().getX());
+        assertEquals(937, id.bottomRight().getY());
+
+        assertTrue(name.bottomRight().getY() <= id.topLeft().getY());
+    }
+
+    @Test
+    void digitsOnlyStripsIdLabelNoise() {
+        assertEquals("181743604", CharacterSwitchHelper.digitsOnly("ID: 181743604 &)"));
+        assertEquals("181743604", CharacterSwitchHelper.digitsOnly("181743604"));
+        assertEquals(null, CharacterSwitchHelper.digitsOnly(""));
+        assertEquals(null, CharacterSwitchHelper.digitsOnly("no-digits"));
+    }
+
     private static boolean isInside(dev.frostguard.api.domain.AreaData area, PointData point) {
         return point.getX() >= area.topLeft().getX()
                 && point.getX() <= area.bottomRight().getX()
