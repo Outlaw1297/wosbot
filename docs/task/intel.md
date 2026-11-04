@@ -26,10 +26,15 @@ Lighthouse Intel icon after the bounded icon scan is treated as unavailable,
 because the completed Intel row may have been hidden; it is not a reason to tap
 an assumed coordinate.
 
-When completed Intel markers expose the stable green `Claim All` control, claim
-them with that single detected action and verify that the control disappears.
-Individual completed-marker taps are retained only as a bounded fallback for a
-missing or ineffective `Claim All` state.
+The modern Intel map exposes dual bottom controls: blue `Execute All` on the
+left (grey when no runnable map missions remain; cost is Intel stamina, not
+gems) and green `Claim All` on the right. Claim completed markers with the
+detected `Claim All` action and verify that the control disappears. Individual
+completed-marker taps are retained only as a bounded fallback for a missing or
+ineffective `Claim All` state. When `Execute All` is blue, dispatch remaining
+map missions with that single action before falling back to per-marker beast,
+survivor, and journey handling. Grey `Execute All` means runnable map missions
+appear exhausted for that visit.
 
 Hero's Journey is complete only after the exploration victory template is
 visible. Live logs show the victory state settling several seconds after Fight,

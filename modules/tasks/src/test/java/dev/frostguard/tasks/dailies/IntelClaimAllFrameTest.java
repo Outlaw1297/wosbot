@@ -27,18 +27,33 @@ class IntelClaimAllFrameTest {
 
     @Test
     void detectsClaimAllInTheCompletedIntelMap() throws IOException {
-        assertTrue(matches("intel-claim-all-live.png"));
+        assertTrue(matches(TemplatesEnum.INTEL_CLAIM_ALL, "intel-claim-all-live.png",
+                CommonGameAreas.INTEL_CLAIM_ALL_AREA, 88));
+    }
+
+    @Test
+    void detectsDualBottomButtonsOnModernIntelMap() throws IOException {
+        assertTrue(matches(TemplatesEnum.INTEL_CLAIM_ALL_DUAL, "intel-dual-buttons-20261104.png",
+                CommonGameAreas.INTEL_CLAIM_ALL_AREA, 88));
+        assertTrue(matches(TemplatesEnum.INTEL_EXECUTE_ALL, "intel-dual-buttons-20261104.png",
+                CommonGameAreas.INTEL_EXECUTE_ALL_AREA, 88));
     }
 
     @Test
     void rejectsClaimAllOnTheJourneyVictoryScreen() throws IOException {
-        assertFalse(matches("journey-victory-20260821.png"));
+        assertFalse(matches(TemplatesEnum.INTEL_CLAIM_ALL, "journey-victory-20260821.png",
+                CommonGameAreas.INTEL_CLAIM_ALL_AREA, 88));
+        assertFalse(matches(TemplatesEnum.INTEL_CLAIM_ALL_DUAL, "journey-victory-20260821.png",
+                CommonGameAreas.INTEL_CLAIM_ALL_AREA, 88));
     }
 
-    private boolean matches(String fixture) throws IOException {
-        return OpenCvPatternLocator.locatePattern(resource(fixture), TemplatesEnum.INTEL_CLAIM_ALL,
-                CommonGameAreas.INTEL_CLAIM_ALL_AREA.topLeft(),
-                CommonGameAreas.INTEL_CLAIM_ALL_AREA.bottomRight(), 88).isFound();
+    private boolean matches(
+            TemplatesEnum template,
+            String fixture,
+            dev.frostguard.api.domain.AreaData area,
+            double threshold) throws IOException {
+        return OpenCvPatternLocator.locatePattern(resource(fixture), template,
+                area.topLeft(), area.bottomRight(), threshold).isFound();
     }
 
     private byte[] resource(String name) throws IOException {

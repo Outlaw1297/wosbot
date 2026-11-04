@@ -55,7 +55,10 @@ public final class CommonGameAreas {
     // after every completed Intel reward has been claimed.
     public static final AreaData INTEL_COOLDOWN_WITH_MARKERS_OCR_AREA = region(378, 103, 508, 146);
     public static final AreaData INTEL_COOLDOWN_EMPTY_MAP_OCR_AREA    = region(378, 580, 530, 640);
-    public static final AreaData INTEL_CLAIM_ALL_AREA                 = region(190, 1050, 530, 1200);
+    // Dual bottom controls on the modern Intel map: Execute All (left, blue→grey) and Claim All (right).
+    // Claim All search stays wide enough for older centered single-button Intel layouts.
+    public static final AreaData INTEL_EXECUTE_ALL_AREA               = region(15, 1090, 355, 1250);
+    public static final AreaData INTEL_CLAIM_ALL_AREA                 = region(180, 1050, 710, 1250);
 
     // Furnace detail entry, distinct from the final building confirmation dialog.
     public static final AreaData FURNACE_PANEL_TITLE = region(0, 650, 245, 760);
@@ -67,7 +70,10 @@ public final class CommonGameAreas {
     // after the caller has proved that no selected tab is visible, and the result is then verified.
     // Keep the trigger inside the thin arrow that remains exposed beside an expanded World march
     // panel, but away from the absolute display edge where MuMu can discard an otherwise valid tap.
+    // When the Marching queue is expanded it can cover Quick Access and this handle; collapse first.
     public static final AreaData LEFT_MENU_TRIGGER        = region(6, 546, 16, 554);
+    public static final AreaData MARCH_PANEL_HEADER_AREA  = region(15, 300, 300, 370);
+    public static final AreaData MARCH_PANEL_COLLAPSE_AREA = region(18, 305, 80, 355);
     public static final AreaData LEFT_MENU_CITY_TAB       = region(9, 246, 146, 293);
     public static final AreaData LEFT_MENU_WILDERNESS_TAB = region(155, 246, 293, 293);
     public static final AreaData LEFT_MENU_DAILY_TAB      = region(302, 246, 438, 293);

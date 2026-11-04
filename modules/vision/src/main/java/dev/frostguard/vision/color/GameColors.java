@@ -73,6 +73,16 @@ public final class GameColors {
                 && red(rgb) < 190;
     }
 
+    /** Saturated blue Intel Execute All control while missions remain runnable. */
+    public static boolean isIntelExecuteBlue(int rgb) {
+        return isArenaChallengeBlue(rgb);
+    }
+
+    /** Greyed Intel Execute All control after runnable missions are exhausted. */
+    public static boolean isIntelExecuteGrey(int rgb) {
+        return isArenaChallengeGrey(rgb);
+    }
+
     /** Dark button shadow/background pixels inside disabled arena challenge buttons. */
     public static boolean isArenaChallengeDark(int rgb) {
         return red(rgb) < 80 && green(rgb) < 90 && blue(rgb) < 110;

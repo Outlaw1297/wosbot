@@ -21,8 +21,11 @@ import dev.frostguard.engine.schedule.TaskQueue;
 import dev.frostguard.engine.service.StaminaService;
 import dev.frostguard.engine.service.StatisticsService;
 import dev.frostguard.engine.service.TaskManagementService;
+import dev.frostguard.vision.color.GameColors;
 import dev.frostguard.vision.convert.GameTimeUtils;
+import dev.frostguard.vision.convert.ImageConverter;
 import dev.frostguard.vision.ocr.ResilientOcrExecutor;
+import java.awt.image.BufferedImage;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
@@ -30,6 +33,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.Consumer;
+import java.util.function.IntPredicate;
 import java.util.List;
 
 public class IntelligenceRoutine extends DelayedTask {
@@ -64,6 +68,16 @@ private static final SearchConfig INTEL_CLAIM_ALL_SEARCH = SearchConfig.builder(
 		.withThreshold(88)
 		.withArea(CommonGameAreas.INTEL_CLAIM_ALL_AREA)
 		.build();
+
+private static final SearchConfig INTEL_EXECUTE_ALL_SEARCH = SearchConfig.builder()
+		.withMaxAttempts(2)
+		.withDelay(500L)
+		.withThreshold(88)
+		.withArea(CommonGameAreas.INTEL_EXECUTE_ALL_AREA)
+		.build();
+
+private static final int INTEL_EXECUTE_BLUE_MIN_PIXELS = 400;
+private static final long INTEL_EXECUTE_ALL_SETTLE_MS = 3_000L;
 
 private static final PointData MARCH_RECALL_CONFIRM_TOP_LEFT = new PointData(446, 780);
 
@@ -243,6 +257,17 @@ public IntelligenceRoutine(AccountDescriptor profile, TpDailyTaskEnum tpTask) {
 
 
 			redeemCompletedMissions();
+
+			ExecuteAllState executeAll = readExecuteAllState();
+			if (executeAll == ExecuteAllState.ACTIVE) {
+				if (tapExecuteAll()) {
+					anyIntelProcessed = true;
+					continue;
+				}
+			} else if (executeAll == ExecuteAllState.EXHAUSTED) {
+				logDebug(routineLogIntelligenceLine(
+						"Intel Execute All is grey; runnable map missions appear exhausted."));
+			}
 
 
 			if (!hasEnoughStaminaFlow()) {
@@ -492,15 +517,94 @@ private MarchesAvailable resolveMarchesAvailable(List<MarchSlotState> slots) {
 		return new MarchesAvailable(false, retryAt);
 	}
 
+private enum ExecuteAllState {
+		ABSENT,
+		ACTIVE,
+		EXHAUSTED,
+		UNKNOWN
+	}
+
 private int redeemCompletedMissions() {
 		intelScreenHelper.ensureOnIntelScreen();
 		logInfo(routineLogIntelligenceLine("Scanning for completed missions to claim."));
-		ImageSearchResultData claimAll = templateSearchHelper.locatePattern(
-				TemplatesEnum.INTEL_CLAIM_ALL, INTEL_CLAIM_ALL_SEARCH);
+		ImageSearchResultData claimAll = locateClaimAllButton();
 		if (claimAll.isFound()) {
 			return redeemAllCompletedMissions(claimAll);
 		}
 		return redeemCompletedMissionsIndividually();
+	}
+
+private ImageSearchResultData locateClaimAllButton() {
+		ImageSearchResultData claimAll = templateSearchHelper.locatePattern(
+				TemplatesEnum.INTEL_CLAIM_ALL, INTEL_CLAIM_ALL_SEARCH);
+		if (claimAll.isFound()) {
+			return claimAll;
+		}
+		return templateSearchHelper.locatePattern(
+				TemplatesEnum.INTEL_CLAIM_ALL_DUAL, INTEL_CLAIM_ALL_SEARCH);
+	}
+
+private ExecuteAllState readExecuteAllState() {
+		ImageSearchResultData executeAll = templateSearchHelper.locatePattern(
+				TemplatesEnum.INTEL_EXECUTE_ALL, INTEL_EXECUTE_ALL_SEARCH);
+		if (!executeAll.isFound()) {
+			return ExecuteAllState.ABSENT;
+		}
+		BufferedImage frame = captureIntelFrame("execute-all color");
+		if (frame == null) {
+			return ExecuteAllState.UNKNOWN;
+		}
+		AreaData area = CommonGameAreas.INTEL_EXECUTE_ALL_AREA;
+		int blue = countPixels(frame, area, GameColors::isIntelExecuteBlue);
+		int grey = countPixels(frame, area, GameColors::isIntelExecuteGrey);
+		logDebug(routineLogIntelligenceLine(
+				"Intel Execute All colors blue=" + blue + " grey=" + grey));
+		if (blue >= INTEL_EXECUTE_BLUE_MIN_PIXELS && blue > grey) {
+			return ExecuteAllState.ACTIVE;
+		}
+		if (grey > blue) {
+			return ExecuteAllState.EXHAUSTED;
+		}
+		return ExecuteAllState.UNKNOWN;
+	}
+
+private boolean tapExecuteAll() {
+		ImageSearchResultData executeAll = templateSearchHelper.locatePattern(
+				TemplatesEnum.INTEL_EXECUTE_ALL, INTEL_EXECUTE_ALL_SEARCH);
+		if (!executeAll.isFound()) {
+			return false;
+		}
+		logInfo(routineLogIntelligenceLine(
+				"Intel Execute All is active. Dispatching remaining map missions with one action."));
+		tapInside(executeAll);
+		sleepTask(INTEL_EXECUTE_ALL_SETTLE_MS);
+		return true;
+	}
+
+private BufferedImage captureIntelFrame(String context) {
+		try {
+			return ImageConverter.toBufferedImage(emuManager.captureScreen(EMULATOR_NUMBER));
+		} catch (RuntimeException ex) {
+			logDebug(routineLogIntelligenceLine(
+					"Intel frame capture failed for " + context + ": " + ex.getMessage()));
+			return null;
+		}
+	}
+
+private int countPixels(BufferedImage image, AreaData area, IntPredicate matcher) {
+		int count = 0;
+		int x1 = Math.max(0, area.topLeft().getX());
+		int y1 = Math.max(0, area.topLeft().getY());
+		int x2 = Math.min(image.getWidth() - 1, area.bottomRight().getX());
+		int y2 = Math.min(image.getHeight() - 1, area.bottomRight().getY());
+		for (int y = y1; y <= y2; y++) {
+			for (int x = x1; x <= x2; x++) {
+				if (matcher.test(image.getRGB(x, y))) {
+					count++;
+				}
+			}
+		}
+		return count;
 	}
 
 private int redeemAllCompletedMissions(ImageSearchResultData claimAll) {
@@ -513,8 +617,7 @@ private int redeemAllCompletedMissions(ImageSearchResultData claimAll) {
 		tapInside(new PointData(700, 1270), new PointData(710, 1280), 6, 250);
 		sleepTask(1_000);
 
-		ImageSearchResultData remaining = templateSearchHelper.locatePattern(
-				TemplatesEnum.INTEL_CLAIM_ALL, INTEL_CLAIM_ALL_SEARCH);
+		ImageSearchResultData remaining = locateClaimAllButton();
 		if (!remaining.isFound()) {
 			logInfo(routineLogIntelligenceLine("Intel Claim All completed and the button disappeared."));
 			return Math.max(1, completed.size());
