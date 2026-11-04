@@ -1047,8 +1047,8 @@ public class TaskQueue {
             boolean keep = Boolean.TRUE.equals(profile.getConfig(ConfigurationKeyEnum.KEEP_EMULATOR_OPEN_BOOL, Boolean.class));
             if (keep) { emitInfo("Idle exceeded - keeping device open per config"); statusModel.setIdleTimeExceeded(true); return; }
 
-            // Changed by pernerch | Date: 2026-07-02 | Why: keep single-profile-per-emulator
-            // setups on the original idle path; only evaluate handover when siblings exist.
+            // Same-emulator siblings get an explicit handover when overdue; otherwise
+            // always free the global max-running slot so other emulator profiles can run.
             if (hasEnabledSiblingOnSameEmulator()) {
                 Optional<PeerSwitchCandidate> peerCandidate = findBestOverduePeerOnSameEmulator();
                 if (peerCandidate.isPresent()) {
@@ -1058,11 +1058,18 @@ public class TaskQueue {
                 }
             }
 
-            suspendDevice(statusModel.getDelayUntil(), hasEnabledSiblingOnSameEmulator());
-                    // Changed by pernerch | Date: 2026-07-02 | Why: force immediate activation of the
-                    // selected peer queue after slot handover to eliminate idle dead time.
+            suspendDevice(statusModel.getDelayUntil(), releaseGlobalSlotOnIdleSuspend());
             statusModel.setIdleTimeExceeded(true);
         }
+    }
+
+    /**
+     * Idle suspend must free the global {@code MAX_RUNNING_EMULATORS} lease.
+     * Holding it after a profile has no due work monopolizes one of many emulators
+     * when soft-failed tasks previously kept a short retry horizon.
+     */
+    static boolean releaseGlobalSlotOnIdleSuspend() {
+        return true;
     }
 
     private Optional<PeerSwitchCandidate> findBestOverduePeerOnSameEmulator() {

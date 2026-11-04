@@ -122,6 +122,11 @@ class TaskQueueProfileCooldownTest {
     }
 
     @Test
+    void idleSuspendAlwaysReleasesGlobalEmulatorSlot() {
+        assertTrue(TaskQueue.releaseGlobalSlotOnIdleSuspend());
+    }
+
+    @Test
     void idleQueueWithoutLeaseRemainsDormantWhileNextTaskIsDistant() {
         AccountDescriptor profile = persistedProfile();
         IdleRecordingTaskQueue queue = new IdleRecordingTaskQueue(profile);
