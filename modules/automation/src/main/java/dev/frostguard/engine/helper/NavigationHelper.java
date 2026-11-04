@@ -49,13 +49,15 @@ public class NavigationHelper {
 
     private static final PointData EVENT_TAB_SEARCH_TOP_LEFT = new PointData(0, 80);
     private static final PointData EVENT_TAB_SEARCH_BOTTOM_RIGHT = new PointData(720, 210);
-    private static final PointData EVENT_TAB_RESET_FROM = new PointData(80, 120);
-    private static final PointData EVENT_TAB_RESET_TO = new PointData(578, 130);
-    private static final PointData EVENT_TAB_SCAN_FROM = new PointData(630, 143);
-    private static final PointData EVENT_TAB_SCAN_TO = new PointData(400, 128);
-    private static final int EVENT_TAB_RESET_SWIPES = 3;
-    private static final int EVENT_TAB_SCAN_SWIPES = 7;
-    private static final long EVENT_TAB_SETTLE_MS = 1000L;
+    // Horizontal Events strip ignores instant default swipes; use sidebar-like timing.
+    static final PointData EVENT_TAB_RESET_FROM = new PointData(80, 120);
+    static final PointData EVENT_TAB_RESET_TO = new PointData(578, 130);
+    static final PointData EVENT_TAB_SCAN_FROM = new PointData(630, 143);
+    static final PointData EVENT_TAB_SCAN_TO = new PointData(280, 143);
+    static final int EVENT_TAB_RESET_SWIPES = 3;
+    static final int EVENT_TAB_SCAN_SWIPES = 8;
+    static final int EVENT_TAB_SWIPE_DURATION_MS = 500;
+    static final long EVENT_TAB_SETTLE_MS = 1000L;
     private static final AreaData LABYRINTH_LEADERBOARD = area(646, 185, 704, 264);
     private static final AreaData LABYRINTH_CATEGORY = area(90, 190, 320, 450);
     private static final AreaData ALLIANCE_POWER_RANKINGS = area(80, 1035, 290, 1100);
@@ -556,26 +558,23 @@ public class NavigationHelper {
 
         // The horizontal event strip continues moving after the swipe gesture returns. Searching during
         // that animation can miss even a 97% match, so settle fully and inspect only the header strip.
-        ImageSearchResultData tab = locateEventTab(tpl);
+        ImageSearchResultData tab = locateEventTab(event, tpl);
         if (!tab.isFound()) {
             for (int i = 0; i < EVENT_TAB_RESET_SWIPES && !tab.isFound(); i++) {
-                emu.swipeScreen(device, EVENT_TAB_RESET_FROM, EVENT_TAB_RESET_TO);
+                broadcastDebug("Event tab reset swipe " + (i + 1) + "/" + EVENT_TAB_RESET_SWIPES
+                        + " durationMs=" + EVENT_TAB_SWIPE_DURATION_MS);
+                emu.swipeScreen(device, EVENT_TAB_RESET_FROM, EVENT_TAB_RESET_TO, EVENT_TAB_SWIPE_DURATION_MS);
                 interruptibleWait(EVENT_TAB_SETTLE_MS);
-                tab = locateEventTab(tpl);
+                tab = locateEventTab(event, tpl);
             }
 
             for (int i = 0; i < EVENT_TAB_SCAN_SWIPES && !tab.isFound(); i++) {
-                emu.swipeScreen(device, EVENT_TAB_SCAN_FROM, EVENT_TAB_SCAN_TO);
+                broadcastDebug("Event tab scan swipe " + (i + 1) + "/" + EVENT_TAB_SCAN_SWIPES
+                        + " durationMs=" + EVENT_TAB_SWIPE_DURATION_MS);
+                emu.swipeScreen(device, EVENT_TAB_SCAN_FROM, EVENT_TAB_SCAN_TO, EVENT_TAB_SWIPE_DURATION_MS);
                 interruptibleWait(EVENT_TAB_SETTLE_MS);
-                tab = locateEventTab(tpl);
+                tab = locateEventTab(event, tpl);
             }
-        }
-
-        // fallback for mobilization unselected variant
-        if (!tab.isFound() && event == EventMenu.ALLIANCE_MOBILIZATION) {
-            broadcastDebug("Trying unselected mobilization tab");
-            tab = searcher.locatePattern(TemplatesEnum.ALLIANCE_MOBILIZATION_UNSELECTED_TAB,
-                    SearchConfigConstants.DEFAULT_SINGLE);
         }
 
         if (!tab.isFound()) {
@@ -589,13 +588,22 @@ public class NavigationHelper {
         return EventMenuOpenResult.REACHED;
     }
 
-    private ImageSearchResultData locateEventTab(TemplatesEnum template) {
-        return searcher.locatePattern(template,
-                TemplateSearchHelper.SearchConfig.builder()
-                        .withMaxAttempts(1)
-                        .withThreshold(90)
-                        .withCoordinates(EVENT_TAB_SEARCH_TOP_LEFT, EVENT_TAB_SEARCH_BOTTOM_RIGHT)
-                        .build());
+    private ImageSearchResultData locateEventTab(EventMenu event, TemplatesEnum template) {
+        TemplateSearchHelper.SearchConfig headerStrip = TemplateSearchHelper.SearchConfig.builder()
+                .withMaxAttempts(1)
+                .withThreshold(90)
+                .withCoordinates(EVENT_TAB_SEARCH_TOP_LEFT, EVENT_TAB_SEARCH_BOTTOM_RIGHT)
+                .build();
+        ImageSearchResultData tab = searcher.locatePattern(template, headerStrip);
+        if (tab.isFound()) {
+            return tab;
+        }
+        // Mobilization has a distinct unselected glyph; check it on every settled viewport.
+        if (event == EventMenu.ALLIANCE_MOBILIZATION) {
+            broadcastDebug("Trying unselected mobilization tab");
+            return searcher.locatePattern(TemplatesEnum.ALLIANCE_MOBILIZATION_UNSELECTED_TAB, headerStrip);
+        }
+        return tab;
     }
 
     public void clearEventTabSelection() {
