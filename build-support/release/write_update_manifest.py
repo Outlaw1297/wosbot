@@ -22,16 +22,18 @@ def write_manifest(
         *, channel: str, version: str, minimum_updater_version: str,
         published_at: str, release_notes_url: str, installer_url: str,
         installer: Path, output: Path, publisher: str = "") -> dict:
-    if channel not in {"stable", "nightly"}:
-        raise ValueError("channel must be stable or nightly")
+    if channel not in {"stable", "nightly", "nightly_dev"}:
+        raise ValueError("channel must be stable, nightly, or nightly_dev")
     for value, label in ((version, "version"),
                          (minimum_updater_version, "minimum updater version")):
         if not SEMANTIC_VERSION.fullmatch(value):
             raise ValueError(f"{label} must use semantic versioning")
     if channel == "stable" and "-" in version:
         raise ValueError("Stable versions must not use a prerelease identifier")
-    if channel == "nightly" and "nightly" not in version.lower():
+    if channel == "nightly" and "-nightly." not in version.lower():
         raise ValueError("Nightly versions must carry a nightly prerelease identifier")
+    if channel == "nightly_dev" and "-nightly-dev." not in version.lower():
+        raise ValueError("Nightly Dev versions must carry a nightly-dev prerelease identifier")
     timestamp = datetime.fromisoformat(published_at.replace("Z", "+00:00"))
     if timestamp.tzinfo is None or timestamp.utcoffset() != timezone.utc.utcoffset(timestamp):
         raise ValueError("published-at must be an ISO-8601 UTC timestamp")
@@ -80,7 +82,7 @@ def write_manifest(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--channel", required=True, choices=("stable", "nightly"))
+    parser.add_argument("--channel", required=True, choices=("stable", "nightly", "nightly_dev"))
     parser.add_argument("--version", required=True)
     parser.add_argument("--minimum-updater-version", required=True)
     parser.add_argument("--published-at", required=True)

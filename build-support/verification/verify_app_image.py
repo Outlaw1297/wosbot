@@ -36,10 +36,12 @@ FORBIDDEN_NAMES = {
 }
 BUILD_METADATA = "dev/frostguard/app/frostguard-build.properties"
 UPDATE_KEY = "dev/frostguard/update/project-update-key.properties"
+REPO_ROOT = Path(__file__).resolve().parents[2]
 REPO_UPDATE_KEY = (
-    Path(__file__).resolve().parents[2]
-    / "modules/update/src/main/resources"
-    / UPDATE_KEY
+    REPO_ROOT / "modules/update/src/main/resources" / UPDATE_KEY
+)
+NIGHTLY_DEV_UPDATE_KEY = (
+    REPO_ROOT / "packaging/desktop/src/main/nightly-dev" / "project-update-key.properties"
 )
 
 
@@ -125,11 +127,23 @@ def inspect_image(
         "java-options=-Duser.dir=$APPDIR",
         f"java-options=-Dfrostguard.watcher.launcher=$APPDIR/../{watcher_name}.exe",
     )
+    desktop_update_options = (
+        "java-options=-Dfrostguard.update.manifest.stable=",
+        "java-options=-Dfrostguard.update.manifest.nightly=",
+    )
+    if channel == "nightly_dev":
+        desktop_update_options = (
+            *desktop_update_options,
+            "java-options=-Dfrostguard.update.manifest.nightly_dev="
+            "https://github.com/Outlaw1297/wosbot/releases/download/nightly_dev/"
+            "frostguard-nightly_dev-manifest.json",
+            "java-options=-Dfrostguard.channel.page.nightly_dev="
+            "https://github.com/Outlaw1297/wosbot/releases/tag/nightly_dev",
+        )
     config_settings = {
         f"app/{product_name}.cfg": (
             "app.mainclass=dev.frostguard.app.bootstrap.Main",
-            "java-options=-Dfrostguard.update.manifest.stable=",
-            "java-options=-Dfrostguard.update.manifest.nightly=",
+            *desktop_update_options,
             *common_java_options,
         ),
         f"app/{watcher_name}.cfg": (
@@ -206,7 +220,9 @@ def inspect_image(
         try:
             with zipfile.ZipFile(update_jars[0]) as update_jar:
                 embedded_key = update_jar.read(UPDATE_KEY).decode("utf-8")
-            expected_key = REPO_UPDATE_KEY.read_text(encoding="utf-8")
+            expected_key_path = (
+                NIGHTLY_DEV_UPDATE_KEY if channel == "nightly_dev" else REPO_UPDATE_KEY)
+            expected_key = expected_key_path.read_text(encoding="utf-8")
             key_values = _read_properties(embedded_key)
             expected_values = _read_properties(expected_key)
             public_key = base64.b64decode(

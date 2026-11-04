@@ -27,6 +27,7 @@
 		<frostguard.pull-request-build>false</frostguard.pull-request-build>
 		<frostguard.update.manifest.stable></frostguard.update.manifest.stable>
 		<frostguard.update.manifest.nightly></frostguard.update.manifest.nightly>
+		<frostguard.update.manifest.nightly_dev></frostguard.update.manifest.nightly_dev>
 		<frostguard.update.authenticode-publisher></frostguard.update.authenticode-publisher>
 
 		<!-- JDK baseline -->

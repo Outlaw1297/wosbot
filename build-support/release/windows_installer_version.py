@@ -12,6 +12,10 @@ NIGHTLY_VERSION = re.compile(
     r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)"
     r"-nightly\.(\d{8})\.(0|[1-9]\d*)$"
 )
+NIGHTLY_DEV_VERSION = re.compile(
+    r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)"
+    r"-nightly-dev\.(\d{8})\.(0|[1-9]\d*)$"
+)
 STABLE_CANDIDATE_VERSION = re.compile(
     r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)"
     r"-(?:0|[1-9]\d*|[A-Za-z-][0-9A-Za-z-]*)"
@@ -50,7 +54,14 @@ def stable_candidate_windows_version(version: str, windows_version: str) -> str:
 
 
 def _release_order(channel: str, version: str) -> tuple[int, ...]:
-    pattern = STABLE_VERSION if channel == "stable" else NIGHTLY_VERSION
+    if channel == "stable":
+        pattern = STABLE_VERSION
+    elif channel == "nightly":
+        pattern = NIGHTLY_VERSION
+    elif channel == "nightly_dev":
+        pattern = NIGHTLY_DEV_VERSION
+    else:
+        raise ValueError("channel must be stable, nightly, or nightly_dev")
     match = pattern.fullmatch(version)
     if match is None:
         raise ValueError(f"Invalid {channel} release version: {version}")
@@ -66,15 +77,22 @@ def _windows_installer_fields(channel: str, version: str) -> tuple[int, int, int
         _validate_windows_fields(fields)
         return fields
 
-    if channel != "nightly":
-        raise ValueError("channel must be stable or nightly")
-    match = NIGHTLY_VERSION.fullmatch(version)
+    if channel == "nightly":
+        match = NIGHTLY_VERSION.fullmatch(version)
+        label = "Nightly"
+        expected = "X.Y.Z-nightly.YYYYMMDD.N"
+    elif channel == "nightly_dev":
+        match = NIGHTLY_DEV_VERSION.fullmatch(version)
+        label = "Nightly Dev"
+        expected = "X.Y.Z-nightly-dev.YYYYMMDD.N"
+    else:
+        raise ValueError("channel must be stable, nightly, or nightly_dev")
     if match is None:
-        raise ValueError("Nightly version must use X.Y.Z-nightly.YYYYMMDD.N")
+        raise ValueError(f"{label} version must use {expected}")
     release_date = datetime.strptime(match.group(4), "%Y%m%d").date()
     sequence = int(match.group(5))
     if sequence < 1 or sequence > 999:
-        raise ValueError("Nightly sequence must be between 1 and 999")
+        raise ValueError(f"{label} sequence must be between 1 and 999")
     windows_version = (release_date.year - 2000, release_date.month,
                        release_date.day * 1000 + sequence)
     _validate_windows_fields(windows_version)
@@ -88,7 +106,7 @@ def _validate_windows_fields(fields: tuple[int, int, int]) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--channel", required=True, choices=("stable", "nightly"))
+    parser.add_argument("--channel", required=True, choices=("stable", "nightly", "nightly_dev"))
     parser.add_argument("--version", required=True)
     parser.add_argument("--previous-version")
     parser.add_argument("--candidate-windows-version")

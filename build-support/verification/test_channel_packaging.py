@@ -108,7 +108,12 @@ class ChannelPackagingTest(unittest.TestCase):
             "frostguard.product.identifier": "dev.frostguard.desktop.nightly_dev",
             "frostguard.product.install-dir": "Frostguard Nightly Dev",
             "frostguard.watcher.name": "FrostguardNightlyDevWatcher",
-            "frostguard.pull-request-build": "true",
+            "frostguard.pull-request-build": "false",
+            "frostguard.update.manifest.nightly_dev":
+                "https://github.com/Outlaw1297/wosbot/releases/download/nightly_dev/"
+                "frostguard-nightly_dev-manifest.json",
+            "frostguard.channel.page.nightly_dev":
+                "https://github.com/Outlaw1297/wosbot/releases/tag/nightly_dev",
         }
         for key, value in expected_stable.items():
             self.assertEqual(value, stable[key])
@@ -133,10 +138,13 @@ class ChannelPackagingTest(unittest.TestCase):
             "-Dfrostguard.channel=${frostguard.release.channel}",
             "-Dfrostguard.update.manifest.stable=${frostguard.update.manifest.stable}",
             "-Dfrostguard.update.manifest.nightly=${frostguard.update.manifest.nightly}",
+            "-Dfrostguard.update.manifest.nightly_dev=${frostguard.update.manifest.nightly_dev}",
+            "-Dfrostguard.channel.page.nightly_dev=${frostguard.channel.page.nightly_dev}",
             "${project.build.directory}/installers/${frostguard.release.channel}",
             "${frostguard.watcher.name}=",
             "--win-shortcut-prompt",
             "--resource-dir",
+            "pin-nightly-dev-update-key",
         ):
             self.assertIn(contract, pom)
 

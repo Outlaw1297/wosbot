@@ -30,6 +30,7 @@
         <frostguard.product.upgrade-uuid>fa0d66f6-1f7d-4da8-9701-88f7b4570797</frostguard.product.upgrade-uuid>
         <frostguard.channel.page.stable>https://github.com/Shederator/wosbot/releases/latest</frostguard.channel.page.stable>
         <frostguard.channel.page.nightly>https://github.com/Shederator/wosbot/releases/tag/nightly</frostguard.channel.page.nightly>
+        <frostguard.channel.page.nightly_dev></frostguard.channel.page.nightly_dev>
     </properties>
 
     <dependencies>
@@ -284,9 +285,13 @@
                                             <arg value="--java-options" />
                                             <arg value="-Dfrostguard.update.manifest.nightly=${frostguard.update.manifest.nightly}" />
                                             <arg value="--java-options" />
+                                            <arg value="-Dfrostguard.update.manifest.nightly_dev=${frostguard.update.manifest.nightly_dev}" />
+                                            <arg value="--java-options" />
                                             <arg value="-Dfrostguard.channel.page.stable=${frostguard.channel.page.stable}" />
                                             <arg value="--java-options" />
                                             <arg value="-Dfrostguard.channel.page.nightly=${frostguard.channel.page.nightly}" />
+                                            <arg value="--java-options" />
+                                            <arg value="-Dfrostguard.channel.page.nightly_dev=${frostguard.channel.page.nightly_dev}" />
                                             <arg value="--java-options" />
                                             <arg value="-Duser.dir=$APPDIR" />
                                             <arg value="--java-options" />
@@ -388,13 +393,13 @@
             </properties>
         </profile>
 
-        <!-- Side-by-side fork/dev MSI that never shares Nightly's install identity
-             or workspace. Marks itself as a PR-test build so release updates stay off. -->
+        <!-- Side-by-side fork verification MSI. Own identity/workspace, and its
+             Config > Updates feed points at Outlaw1297/wosbot nightly_dev only. -->
         <profile>
             <id>windows-nightly-dev</id>
             <properties>
                 <frostguard.release.channel>nightly_dev</frostguard.release.channel>
-                <frostguard.pull-request-build>true</frostguard.pull-request-build>
+                <frostguard.pull-request-build>false</frostguard.pull-request-build>
                 <frostguard.windows.launcher-version>26.8.12004</frostguard.windows.launcher-version>
                 <frostguard.product.name>Frostguard Nightly Dev</frostguard.product.name>
                 <frostguard.product.identifier>dev.frostguard.desktop.nightly_dev</frostguard.product.identifier>
@@ -402,7 +407,57 @@
                 <frostguard.product.install-dir>Frostguard Nightly Dev</frostguard.product.install-dir>
                 <frostguard.watcher.name>FrostguardNightlyDevWatcher</frostguard.watcher.name>
                 <frostguard.product.upgrade-uuid>c7c010bb-b66a-405e-8b68-f077edb074b8</frostguard.product.upgrade-uuid>
+                <frostguard.update.manifest.nightly_dev>https://github.com/Outlaw1297/wosbot/releases/download/nightly_dev/frostguard-nightly_dev-manifest.json</frostguard.update.manifest.nightly_dev>
+                <frostguard.channel.page.nightly_dev>https://github.com/Outlaw1297/wosbot/releases/tag/nightly_dev</frostguard.channel.page.nightly_dev>
             </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-antrun-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>pin-nightly-dev-update-key</id>
+                                <phase>prepare-package</phase>
+                                <goals>
+                                    <goal>run</goal>
+                                </goals>
+                                <configuration>
+                                    <target>
+                                        <!-- Nightly Dev verifies against the fork key, never the
+                                             official Stable/Nightly project key. -->
+                                        <pathconvert property="frostguard.update.jar" pathsep=",">
+                                            <path>
+                                                <fileset dir="${project.build.directory}/input/lib"
+                                                        includes="frostguard-update-*.jar" />
+                                            </path>
+                                        </pathconvert>
+                                        <fail message="Expected one staged frostguard-update jar">
+                                            <condition>
+                                                <not>
+                                                    <and>
+                                                        <isset property="frostguard.update.jar" />
+                                                        <not>
+                                                            <contains string="${frostguard.update.jar}" substring="," />
+                                                        </not>
+                                                    </and>
+                                                </not>
+                                            </condition>
+                                        </fail>
+                                        <exec executable="jar" failonerror="true">
+                                            <arg value="uf" />
+                                            <arg path="${frostguard.update.jar}" />
+                                            <arg value="-C" />
+                                            <arg path="${project.basedir}/src/main/nightly-dev" />
+                                            <arg value="dev/frostguard/update/project-update-key.properties" />
+                                        </exec>
+                                    </target>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
         </profile>
     </profiles>
 </project>

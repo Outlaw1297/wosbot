@@ -15,6 +15,7 @@ class UpdateEndpointResolverTest {
     void clearProperties() {
         System.clearProperty(UpdateEndpointResolver.STABLE_PROPERTY);
         System.clearProperty(UpdateEndpointResolver.NIGHTLY_PROPERTY);
+        System.clearProperty(UpdateEndpointResolver.NIGHTLY_DEV_PROPERTY);
     }
 
     @Test
@@ -23,10 +24,14 @@ class UpdateEndpointResolverTest {
     }
 
     @Test
-    void nightlyDevHasNoEndpointEvenWhenNightlyFeedIsConfigured() throws Exception {
+    void nightlyDevUsesItsOwnFeedNotTheNightlyFeed() throws Exception {
         System.setProperty(UpdateEndpointResolver.NIGHTLY_PROPERTY,
                 "https://updates.example.com/nightly.json");
-        assertFalse(resolver.resolve(RuntimeChannel.NIGHTLY_DEV).isPresent());
+        System.setProperty(UpdateEndpointResolver.NIGHTLY_DEV_PROPERTY,
+                "https://github.com/Outlaw1297/wosbot/releases/download/nightly_dev/frostguard-nightly_dev-manifest.json");
+        assertEquals(
+                "https://github.com/Outlaw1297/wosbot/releases/download/nightly_dev/frostguard-nightly_dev-manifest.json",
+                resolver.resolve(RuntimeChannel.NIGHTLY_DEV).orElseThrow().toString());
     }
 
     @Test

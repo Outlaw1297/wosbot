@@ -121,7 +121,9 @@ python build-support/verification/verify_app_image.py `
 
 Add `windows-nightly-dev` for a side-by-side verification install that does not
 share Nightly's product identity, upgrade UUID, or workspace
-(`~/.frostguard/workspaces/nightly_dev/`). It disables release updates:
+(`~/.frostguard/workspaces/nightly_dev/`). Config > Updates on that build reads
+only the Outlaw1297 fork rolling feed
+(`releases/tag/nightly_dev`), never official Stable or Nightly:
 
 ```powershell
 .\mvnw.cmd "-Pwindows-app-image,windows-installer,windows-nightly-dev" package
