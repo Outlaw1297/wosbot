@@ -41,6 +41,8 @@ public final class SidebarNavigator {
     private static final int GO_LEFT_OFFSET = 315;
     private static final int GO_RIGHT_OFFSET = 394;
     private static final int GO_HALF_HEIGHT = 30;
+    private static final int MARCH_COLLAPSE_THRESHOLD = 88;
+    private static final int MARCH_COLLAPSE_SETTLE_MS = 800;
 
     private final EmulatorController emu;
     private final String device;
@@ -149,6 +151,7 @@ public final class SidebarNavigator {
                 log.warn("Refusing to tap the sidebar trigger without a Home or World anchor");
                 return false;
             }
+            collapseExpandedMarchPanelIfPresent();
             int triggerTaps = 0;
             while (current.isEmpty() && triggerTaps < MAX_TRIGGER_TAPS) {
                 triggerTaps++;
@@ -257,6 +260,40 @@ public final class SidebarNavigator {
             return null;
         }
         return emu.captureScreen(device);
+    }
+
+    /**
+     * Expanded World Marching chrome can cover Quick Access and the thin left-edge
+     * sidebar handle. Collapse it via the header caret before the trigger tap.
+     */
+    private void collapseExpandedMarchPanelIfPresent() {
+        RawImageData frame = emu.captureScreen(device);
+        if (frame == null) {
+            return;
+        }
+        ImageSearchResultData header = emu.locatePattern(
+                device,
+                frame,
+                TemplatesEnum.MARCHES_AREA_HEADER,
+                CommonGameAreas.MARCH_PANEL_HEADER_AREA.topLeft(),
+                CommonGameAreas.MARCH_PANEL_HEADER_AREA.bottomRight(),
+                MARCH_COLLAPSE_THRESHOLD);
+        if (!header.isFound()) {
+            return;
+        }
+        ImageSearchResultData caret = emu.locatePattern(
+                device,
+                frame,
+                TemplatesEnum.MARCHES_AREA_COLLAPSE_CARET,
+                CommonGameAreas.MARCH_PANEL_COLLAPSE_AREA.topLeft(),
+                CommonGameAreas.MARCH_PANEL_COLLAPSE_AREA.bottomRight(),
+                MARCH_COLLAPSE_THRESHOLD);
+        log.debug("Expanded Marching panel detected; collapsing before sidebar trigger");
+        if (caret.isFound()) {
+            taps.tapInside(caret, 1, MARCH_COLLAPSE_SETTLE_MS);
+        } else {
+            taps.tapInside(CommonGameAreas.MARCH_PANEL_COLLAPSE_AREA, 1, MARCH_COLLAPSE_SETTLE_MS);
+        }
     }
 
     private ImageSearchResultData locateRowIcon(SidebarDestination destination, RawImageData frame) {

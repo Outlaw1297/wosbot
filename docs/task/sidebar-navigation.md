@@ -13,9 +13,10 @@ unknown/closed state, not permission to continue tapping.
 
 Opening the collapsed panel retains one fixed handle area because no stable visible target
 exists in the supplied open-panel frames. The tap region is restricted to the interior of the
-thin arrow at `x=6..16, y=546..554`. This stays clear of both the absolute display edge, where
-MuMu can discard a tap, and the expanded compact Marching panel behind the handle on World. A
-trigger tap is allowed only while a Home or World anchor is present.
+thin arrow at `x=6..16, y=546..554`. This stays clear of the absolute display edge, where
+MuMu can discard a tap. An expanded World Marching panel can still cover Quick Access and
+that handle, so navigation collapses the panel via the Marching header caret before the
+trigger tap. A trigger tap is allowed only while a Home or World anchor is present.
 After the initial 400 ms settle, the navigator polls fresh frames for up to
 roughly two seconds because live logs show that a successful tap can temporarily classify as
 closed or unknown. If no section appears and a fresh Home or World anchor still proves the root
