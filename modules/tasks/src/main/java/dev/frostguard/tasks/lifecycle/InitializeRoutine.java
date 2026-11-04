@@ -1015,6 +1015,13 @@ public class InitializeRoutine extends DelayedTask {
 		boolean characterMatches = characterSwitchHelper.verifyCurrentCharacter(profile);
 		
 		if (!characterMatches) {
+			if (characterSwitchHelper.lastVerifyUnreadable()) {
+				// OCR garbage must not open Settings / roster; Initialize will retry later.
+				logError("Character OCR unreadable on Chief Profile. Not switching; initialization deferred.");
+				isStarted = false;
+				return false;
+			}
+
 			logInfo("Current character does not match profile configuration. Switching character...");
 			
 			// Switch to correct character

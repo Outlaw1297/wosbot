@@ -64,6 +64,29 @@ class CharacterSwitchHelperTest {
         assertEquals(null, CharacterSwitchHelper.digitsOnly("no-digits"));
     }
 
+    @Test
+    void sanitizeCharacterIdRejectsShortPowerBleedDigits() {
+        assertEquals("181743604", CharacterSwitchHelper.sanitizeCharacterId("181743604"));
+        assertEquals(null, CharacterSwitchHelper.sanitizeCharacterId("8641"));
+        assertEquals(null, CharacterSwitchHelper.sanitizeCharacterId("12345"));
+        assertEquals(null, CharacterSwitchHelper.sanitizeCharacterId(""));
+        assertEquals(null, CharacterSwitchHelper.sanitizeCharacterId(null));
+        assertEquals(6, CharacterSwitchHelper.MIN_CHARACTER_ID_DIGITS);
+    }
+
+    @Test
+    void usableIdentityRequiresConfiguredFieldEvidence() {
+        var withId = new CharacterSwitchHelper.LiveCharacter(null, "181743604");
+        var withName = new CharacterSwitchHelper.LiveCharacter("Outlaw_1297", null);
+        var empty = new CharacterSwitchHelper.LiveCharacter(null, null);
+
+        assertTrue(CharacterSwitchHelper.hasUsableIdentity(withId, "Outlaw_1297", "181743604"));
+        assertTrue(CharacterSwitchHelper.hasUsableIdentity(withName, "Outlaw_1297", "181743604"));
+        assertFalse(CharacterSwitchHelper.hasUsableIdentity(empty, "Outlaw_1297", "181743604"));
+        assertFalse(CharacterSwitchHelper.hasUsableIdentity(
+                new CharacterSwitchHelper.LiveCharacter(null, null), "Outlaw_1297", null));
+    }
+
     private static boolean isInside(dev.frostguard.api.domain.AreaData area, PointData point) {
         return point.getX() >= area.topLeft().getX()
                 && point.getX() <= area.bottomRight().getX()

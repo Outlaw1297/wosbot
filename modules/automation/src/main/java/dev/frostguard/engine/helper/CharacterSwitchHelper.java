@@ -32,8 +32,11 @@ public class CharacterSwitchHelper {
     static final int PROFILE_READY_ATTEMPTS = 10;
     static final int PROFILE_READY_RETRY_DELAY_MS = 500;
     static final int PROFILE_OCR_SETTLE_MS = 1000;
+    static final int PROFILE_OCR_READ_ATTEMPTS = 3;
     static final int PROFILE_MENU_BACK_SETTLE_MS = 800;
     static final int ROSTER_OPEN_SETTLE_MS = 2500;
+    // In-game character IDs are long numeric strings; short digit runs are furnace/power bleed.
+    static final int MIN_CHARACTER_ID_DIGITS = 6;
     static final String NAME_OCR_ALLOWED_CHARS =
             "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 _-";
 
@@ -44,6 +47,8 @@ public class CharacterSwitchHelper {
     private final TemplateSearchHelper tpl;
     private final ResilientOcrExecutor<String> ocr;
     private boolean lastSwitchRequiredReload;
+    private boolean lastVerifyUnreadable;
+    private ImageSearchResultData readySettingsHit;
 
     public CharacterSwitchHelper(EmulatorController emuManager, String emulatorNumber, AccountDescriptor profile) {
         this.emu = emuManager;
@@ -59,9 +64,18 @@ public class CharacterSwitchHelper {
         return lastSwitchRequiredReload;
     }
 
+    /**
+     * True when the last {@link #verifyCurrentCharacter} failed because Chief Profile OCR
+     * produced no usable name or ID. Callers must not treat that as a character mismatch.
+     */
+    public boolean lastVerifyUnreadable() {
+        return lastVerifyUnreadable;
+    }
+
     // --- Character verification ---
 
     public boolean verifyCurrentCharacter(AccountDescriptor p) {
+        lastVerifyUnreadable = false;
         String wantName = p.getCharacterName(), wantId = p.getCharacterId();
         if (blank(wantName) && blank(wantId)) { log.debug("No character config, skipping"); return true; }
         log.info("Verifying character: name='" + wantName + "' id='" + wantId + "'");
@@ -69,19 +83,27 @@ public class CharacterSwitchHelper {
         taps.tapInside(CommonGameAreas.PROFILE_AVATAR, 1, PROFILE_OPEN_SETTLE_MS);
         if (!waitForChiefProfileReady()) {
             log.warn("Chief Profile did not finish loading before OCR");
+            lastVerifyUnreadable = true;
             return false;
         }
         sleep(PROFILE_OCR_SETTLE_MS);
 
-        LiveCharacter live = readLiveCharacter();
-        log.debug("Live char: name='" + live.name() + "' id='" + live.id() + "'");
+        LiveCharacter live = readLiveCharacterWithRetries(wantName, wantId);
+        log.info("Live char: name='" + live.name() + "' id='" + live.id() + "'");
+
+        if (!hasUsableIdentity(live, wantName, wantId)) {
+            lastVerifyUnreadable = true;
+            log.warn("Chief Profile OCR unreadable; not treating as character mismatch");
+            emu.pressBack(dev);
+            return false;
+        }
 
         if (matchesConfigured(live, wantName, wantId)) {
             log.info("Char verified OK from Chief Profile");
             emu.pressBack(dev);
             return true;
         }
-        log.warn("Char mismatch");
+        log.warn("Char mismatch; leaving Chief Profile open for switch");
         return false;
     }
 
@@ -93,12 +115,11 @@ public class CharacterSwitchHelper {
         if (blank(target)) { log.error("No character name configured"); return false; }
         log.info("Switching to '" + target + "' server=" + p.getCharacterServer());
 
-        if (!waitForChiefProfileReady()) {
+        if (!ensureChiefProfileReadyForSwitch()) {
             log.error("Chief Profile settings control not ready for switch");
             return false;
         }
-        if (!tapTemplate(TemplatesEnum.GAME_PROFILE_SETTINGS_BUTTON,
-                CommonGameAreas.PROFILE_SETTINGS_BUTTON_AREA)) {
+        if (!tapChiefProfileSettings()) {
             log.error("Settings button not found"); return false;
         }
         sleep(PROFILE_MENU_BACK_SETTLE_MS);
@@ -230,8 +251,18 @@ public class CharacterSwitchHelper {
 
     // --- Shared utilities ---
 
+    private boolean ensureChiefProfileReadyForSwitch() {
+        if (waitForChiefProfileReady()) {
+            return true;
+        }
+        // Verify may have closed the panel, or the avatar tap never opened it.
+        log.info("Re-opening Chief Profile for character switch");
+        taps.tapInside(CommonGameAreas.PROFILE_AVATAR, 1, PROFILE_OPEN_SETTLE_MS);
+        return waitForChiefProfileReady();
+    }
+
     private boolean waitForChiefProfileReady() {
-        ImageSearchResultData hit = tpl.locatePattern(
+        readySettingsHit = tpl.locatePattern(
                 TemplatesEnum.GAME_PROFILE_SETTINGS_BUTTON,
                 TemplateSearchHelper.SearchConfig.builder()
                         .withArea(CommonGameAreas.PROFILE_SETTINGS_BUTTON_AREA)
@@ -239,15 +270,43 @@ public class CharacterSwitchHelper {
                         .withDelay(PROFILE_READY_RETRY_DELAY_MS)
                         .withThreshold(80)
                         .build());
-        boolean ready = hit != null && hit.isFound();
+        boolean ready = readySettingsHit != null && readySettingsHit.isFound();
         if (ready) {
             log.debug("Chief Profile ready (settings control visible)");
+        } else {
+            readySettingsHit = null;
         }
         return ready;
     }
 
+    /**
+     * Tap the settings control already located by {@link #waitForChiefProfileReady}.
+     * A second search right after a successful wait was racing a transient UI frame
+     * and logging "Settings button not found" even though readiness had succeeded.
+     */
+    private boolean tapChiefProfileSettings() {
+        if (readySettingsHit != null && readySettingsHit.isFound()) {
+            taps.tapInside(readySettingsHit, 1, 500);
+            readySettingsHit = null;
+            return true;
+        }
+        return tapTemplate(TemplatesEnum.GAME_PROFILE_SETTINGS_BUTTON,
+                CommonGameAreas.PROFILE_SETTINGS_BUTTON_AREA);
+    }
+
+    private LiveCharacter readLiveCharacterWithRetries(String wantName, String wantId) {
+        LiveCharacter live = readLiveCharacter();
+        for (int attempt = 1; attempt < PROFILE_OCR_READ_ATTEMPTS
+                && !hasUsableIdentity(live, wantName, wantId); attempt++) {
+            log.debug("Chief Profile OCR retry " + (attempt + 1) + "/" + PROFILE_OCR_READ_ATTEMPTS);
+            sleep(PROFILE_OCR_SETTLE_MS);
+            live = readLiveCharacter();
+        }
+        return live;
+    }
+
     private LiveCharacter readLiveCharacter() {
-        String liveId = digitsOnly(ocrRead(CommonGameAreas.CHARACTER_ID_OCR_AREA, idOcrCfg()));
+        String liveId = sanitizeCharacterId(digitsOnly(ocrRead(CommonGameAreas.CHARACTER_ID_OCR_AREA, idOcrCfg())));
         String liveName = ocrRead(CommonGameAreas.CHARACTER_NAME_OCR_AREA, nameOcrCfg());
         // Loading frames or a too-low name box can OCR the ID label into the name strip.
         if (looksLikeIdLeak(liveName)) {
@@ -265,12 +324,43 @@ public class CharacterSwitchHelper {
         return digits.isEmpty() ? null : digits;
     }
 
+    static String sanitizeCharacterId(String digits) {
+        if (blank(digits)) {
+            return null;
+        }
+        if (digits.length() < MIN_CHARACTER_ID_DIGITS) {
+            return null;
+        }
+        return digits;
+    }
+
+    static boolean hasUsableIdentity(LiveCharacter live, String wantName, String wantId) {
+        boolean needId = !blank(wantId);
+        boolean needName = !blank(wantName);
+        if (needId && !blank(live.id())) {
+            return true;
+        }
+        if (needName && !blank(live.name())) {
+            return true;
+        }
+        return false;
+    }
+
     private boolean matchesConfigured(LiveCharacter live, String wantName, String wantId) {
-        boolean idOk = blank(wantId) || (!blank(live.id()) && wantId.equals(live.id()));
-        boolean nameOk = blank(wantName) || (!blank(live.name()) && namesMatch(live.name(), wantName));
-        if (!blank(wantId) && blank(live.id())) log.warn("ID configured but OCR failed");
-        if (!blank(wantName) && blank(live.name())) log.warn("Name configured but OCR failed");
-        return idOk || nameOk;
+        boolean needId = !blank(wantId);
+        boolean needName = !blank(wantName);
+        boolean idMatched = needId && !blank(live.id()) && wantId.equals(live.id());
+        boolean nameMatched = needName && !blank(live.name()) && namesMatch(live.name(), wantName);
+        if (needId && blank(live.id())) {
+            log.warn("ID configured but OCR failed");
+        }
+        if (needName && blank(live.name())) {
+            log.warn("Name configured but OCR failed");
+        }
+        if (!needId && !needName) {
+            return true;
+        }
+        return idMatched || nameMatched;
     }
 
     static boolean looksLikeIdLeak(String ocrText) {
@@ -338,5 +428,5 @@ public class CharacterSwitchHelper {
         try { Thread.sleep(ms); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
     }
 
-    private record LiveCharacter(String name, String id) {}
+    record LiveCharacter(String name, String id) {}
 }
