@@ -316,7 +316,7 @@ command-line pattern trips Norton Behavioral Protection (`IDP.HELU.PSE96%s_cmd`)
 even when Frostguard itself is file-exempted. Windows releases publish the MSI
 package directly; the jpackage EXE bootstrap wrapper is not part of the update
 contract. The waiter requires a one-time authorization token and waits for the
-Frostguard PID to disappear before invoking `msiexec` for the same published MSI
+Frostguard PID to disappear, using a non-interactive delay, before invoking `msiexec` for the same published MSI
 in passive, no-restart mode. It pins `INSTALLDIR` to the running launcher's
 parent so upgrades retain a user-selected installation directory.
 Frostguard authorizes the staged waiter, stops queues and workspace-owned

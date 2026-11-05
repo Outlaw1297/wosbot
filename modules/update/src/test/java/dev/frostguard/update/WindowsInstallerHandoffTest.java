@@ -1,6 +1,7 @@
 package dev.frostguard.update;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
@@ -50,6 +51,9 @@ class WindowsInstallerHandoffTest {
         assertTrue(script.getFileName().toString().endsWith(WindowsInstallerHandoff.HANDOFF_SCRIPT_SUFFIX));
         String scriptText = Files.readString(script, StandardCharsets.UTF_8);
         assertTrue(scriptText.contains("tasklist /FI \"PID eq %TARGET_PID%\""));
+        assertTrue(scriptText.contains("ping -n 2 127.0.0.1 >nul"));
+        assertFalse(scriptText.toLowerCase().contains("timeout /t"));
+        assertFalse(scriptText.toLowerCase().contains("timeout.exe"));
         assertTrue(scriptText.contains("msiexec /i \"%INSTALLER_PATH%\" /passive /norestart INSTALLDIR=\"%INSTALL_DIRECTORY%\""));
         assertTrue(scriptText.contains("The Frostguard restart launcher was not found"));
         assertTrue(scriptText.contains(":start_frostguard"));
@@ -74,44 +78,64 @@ class WindowsInstallerHandoffTest {
     }
 
     @Test
+    @Timeout(value = 30, unit = TimeUnit.SECONDS)
     void restartsExistingInstallationWhenWindowsInstallerFails() throws Exception {
         assumeTrue(System.getProperty("os.name", "").toLowerCase().contains("win"));
         Path installer = Files.writeString(temp.resolve("Frostguard-broken.msi"), "not an MSI package");
         Path installDirectory = Files.createDirectory(temp.resolve("installed Frostguard"));
         Path restartMarker = temp.resolve("restart-marker.txt");
+        // exit closes the console window start opens for a batch file. Without it,
+        // cmd stays at a prompt, inherits the waiter stdout pipe, and readAllBytes never returns.
         Path launcher = Files.writeString(installDirectory.resolve("Frostguard.cmd"),
-                "@echo off\r\n>\"" + restartMarker + "\" echo restarted\r\n");
+                "@echo off\r\n>\"" + restartMarker + "\" echo restarted\r\nexit\r\n");
         Path workspace = Files.createDirectory(temp.resolve("workspace"));
         Path persistedData = Files.writeString(workspace.resolve("frostguard.db"), "existing profile data");
         Path fakeSystemTools = Files.createDirectory(temp.resolve("fake-system-tools"));
         Files.copy(Path.of(System.getenv("SystemRoot"), "System32", "where.exe"),
                 fakeSystemTools.resolve("msiexec.exe"));
-        Process parent = new ProcessBuilder("cmd.exe", "/d", "/c", "timeout /t 1 /nobreak >nul").start();
+        Path waiterLog = temp.resolve("waiter-log.txt");
+        Process parent = new ProcessBuilder("cmd.exe", "/d", "/c", "ping -n 2 127.0.0.1 >nul")
+                .redirectInput(ProcessBuilder.Redirect.from(Path.of("NUL").toFile()))
+                .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                .redirectError(ProcessBuilder.Redirect.DISCARD)
+                .start();
         AtomicReference<Process> waiter = new AtomicReference<>();
         AtomicReference<Map<String, String>> handoffEnvironment = new AtomicReference<>();
-        WindowsInstallerHandoff handoff = new WindowsInstallerHandoff((command, environment) -> {
-            String scriptPath = command.get(command.size() - 1);
-            String testScript = Files.readString(Path.of(scriptPath), StandardCharsets.UTF_8)
-                    .replace("call :show_update_failure", "echo %FAILURE_DETAILS%");
-            Files.writeString(Path.of(scriptPath), testScript, StandardCharsets.UTF_8);
-            ProcessBuilder builder = new ProcessBuilder(command).redirectErrorStream(true);
-            builder.environment().putAll(environment);
-            builder.environment().put("PATH", fakeSystemTools + ";" + builder.environment().get("PATH"));
-            handoffEnvironment.set(environment);
-            waiter.set(builder.start());
-        });
+        try {
+            WindowsInstallerHandoff handoff = new WindowsInstallerHandoff((command, environment) -> {
+                String scriptPath = command.get(command.size() - 1);
+                String testScript = Files.readString(Path.of(scriptPath), StandardCharsets.UTF_8)
+                        .replace("call :show_update_failure", "echo %FAILURE_DETAILS%");
+                Files.writeString(Path.of(scriptPath), testScript, StandardCharsets.UTF_8);
+                ProcessBuilder builder = new ProcessBuilder(command)
+                        .redirectErrorStream(true)
+                        .redirectOutput(waiterLog.toFile())
+                        .redirectInput(ProcessBuilder.Redirect.from(Path.of("NUL").toFile()));
+                builder.environment().putAll(environment);
+                builder.environment().put("PATH", fakeSystemTools + ";" + builder.environment().get("PATH"));
+                handoffEnvironment.set(environment);
+                waiter.set(builder.start());
+            });
 
-        InstallerHandoff.HandoffSession session = handoff.stage(installer, parent.pid(), launcher, workspace);
-        session.authorize();
+            InstallerHandoff.HandoffSession session = handoff.stage(installer, parent.pid(), launcher, workspace);
+            session.authorize();
 
-        assertTrue(waiter.get().waitFor(20, TimeUnit.SECONDS));
-        assertEquals(1, waiter.get().exitValue());
-        waitForFile(restartMarker);
-        assertEquals("restarted", Files.readString(restartMarker).trim());
-        assertEquals("existing profile data", Files.readString(persistedData));
-        assertTrue(Files.notExists(Path.of(handoffEnvironment.get().get(WindowsInstallerHandoff.TOKEN_PATH_ENV))));
-        String output = new String(waiter.get().getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-        assertTrue(output.contains("Windows Installer exited with code"), output);
+            assertTrue(waiter.get().waitFor(20, TimeUnit.SECONDS),
+                    "cmd handoff waiter did not exit");
+            assertEquals(1, waiter.get().exitValue());
+            waitForFile(restartMarker);
+            assertEquals("restarted", Files.readString(restartMarker).trim());
+            assertEquals("existing profile data", Files.readString(persistedData));
+            assertTrue(Files.notExists(Path.of(handoffEnvironment.get().get(WindowsInstallerHandoff.TOKEN_PATH_ENV))));
+            String output = Files.readString(waiterLog);
+            assertTrue(output.contains("Windows Installer exited with code"), output);
+        } finally {
+            parent.destroyForcibly();
+            Process waiterProcess = waiter.get();
+            if (waiterProcess != null) {
+                waiterProcess.destroyForcibly();
+            }
+        }
     }
 
     @Test

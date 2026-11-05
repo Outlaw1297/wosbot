@@ -18,6 +18,11 @@ import java.util.UUID;
  * payload matches Norton Behavioral Protection ({@code IDP.HELU.PSE96%s_cmd})
  * even when Frostguard itself is exempted, because the detection targets the
  * interpreter command line rather than the Frostguard binary path.
+ *
+ * <p>The PID wait uses {@code ping} rather than {@code timeout.exe}.
+ * {@code timeout.exe} reads console input and does not return when the waiter
+ * is launched without an interactive console, so the iteration cap behind it
+ * never runs.
  */
 public final class WindowsInstallerHandoff implements InstallerHandoff {
     static final String INSTALLER_ENV = "FROSTGUARD_UPDATE_INSTALLER";
@@ -35,7 +40,8 @@ public final class WindowsInstallerHandoff implements InstallerHandoff {
         this((command, environment) -> {
             ProcessBuilder builder = new ProcessBuilder(command);
             builder.environment().putAll(environment);
-            builder.redirectInput(ProcessBuilder.Redirect.PIPE);
+            // An open stdin pipe makes timeout.exe and other console readers block.
+            builder.redirectInput(ProcessBuilder.Redirect.from(Path.of("NUL").toFile()));
             builder.redirectOutput(ProcessBuilder.Redirect.DISCARD);
             builder.redirectError(ProcessBuilder.Redirect.DISCARD);
             builder.start();
@@ -181,7 +187,8 @@ public final class WindowsInstallerHandoff implements InstallerHandoff {
                     set "FAILURE_DETAILS=Frostguard did not exit before the update timeout."
                     goto fail
                 )
-                timeout /t 1 /nobreak >nul
+                rem ping does not read the console. The TIMEOUT command blocks without one.
+                ping -n 2 127.0.0.1 >nul
                 goto wait_for_parent
 
                 :parent_exited

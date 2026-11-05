@@ -319,7 +319,10 @@ The external Windows handoff writes a plain `.cmd` waiter next to the MSI,
 receives the Frostguard PID plus a one-time token, and launches that script
 through `cmd.exe`. Do not restore a PowerShell `-EncodedCommand` waiter:
 antivirus Behavioral Protection treats that pattern as a scripted installer
-dropper even when Frostguard is exempted. Frostguard authorizes the staged
+dropper even when Frostguard is exempted. Do not wait with `timeout.exe`;
+it blocks for console input when the waiter has no interactive console, and
+the PID loop behind that call never reaches its cap. The waiter sleeps with
+`ping` instead. Frostguard authorizes the staged
 waiter immediately before coordinated shutdown. The waiter cannot start the
 installer while the Frostguard PID is alive, and a failed shutdown deletes the
 token so a later unrelated application exit cannot launch the staged installer.
