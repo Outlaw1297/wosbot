@@ -9,8 +9,10 @@ on:
   workflow_dispatch:
   push:
     branches:
+      # This file is on main only so Actions shows Run workflow. The Nightly
+      # Dev scripts and windows-nightly-dev profile are not in that tree, so a
+      # push to main must not start this job.
       - "cursor/fix-character-roster-scroll-b3cb"
-      - "main"
 
 permissions:
   contents: write
