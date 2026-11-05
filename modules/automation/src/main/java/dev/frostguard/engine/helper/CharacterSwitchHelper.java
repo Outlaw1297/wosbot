@@ -29,11 +29,13 @@ public class CharacterSwitchHelper {
     // Chief Profile animates in after the avatar tap; OCR before the settings
     // control is visible reads loading garbage (power, "ID …", fragments).
     static final int PROFILE_OPEN_SETTLE_MS = 2000;
+    static final int PROFILE_OPEN_ATTEMPTS = 3;
     static final int PROFILE_READY_ATTEMPTS = 10;
     static final int PROFILE_READY_RETRY_DELAY_MS = 500;
     static final int PROFILE_OCR_SETTLE_MS = 1000;
     static final int PROFILE_OCR_READ_ATTEMPTS = 3;
     static final int PROFILE_MENU_BACK_SETTLE_MS = 800;
+    static final int PROFILE_RECOVERY_BACK_SETTLE_MS = 800;
     static final int ROSTER_OPEN_SETTLE_MS = 2500;
     // In-game character IDs are long numeric strings; short digit runs are furnace/power bleed.
     static final int MIN_CHARACTER_ID_DIGITS = 6;
@@ -80,9 +82,7 @@ public class CharacterSwitchHelper {
         if (blank(wantName) && blank(wantId)) { log.debug("No character config, skipping"); return true; }
         log.info("Verifying character: name='" + wantName + "' id='" + wantId + "'");
 
-        taps.tapInside(CommonGameAreas.PROFILE_AVATAR, 1, PROFILE_OPEN_SETTLE_MS);
-        if (!waitForChiefProfileReady()) {
-            log.warn("Chief Profile did not finish loading before OCR");
+        if (!openChiefProfileForVerification()) {
             lastVerifyUnreadable = true;
             return false;
         }
@@ -104,6 +104,24 @@ public class CharacterSwitchHelper {
             return true;
         }
         log.warn("Char mismatch; leaving Chief Profile open for switch");
+        return false;
+    }
+
+    /**
+     * Opens Chief Profile for verification. An overlay left on home after startup
+     * can swallow the avatar tap; recover with Back and retry a bounded number of times.
+     */
+    private boolean openChiefProfileForVerification() {
+        for (int attempt = 1; attempt <= PROFILE_OPEN_ATTEMPTS; attempt++) {
+            taps.tapInside(CommonGameAreas.PROFILE_AVATAR, 1, PROFILE_OPEN_SETTLE_MS);
+            if (waitForChiefProfileReady()) {
+                return true;
+            }
+            log.warn("Chief Profile did not finish loading before OCR (open attempt "
+                    + attempt + "/" + PROFILE_OPEN_ATTEMPTS + ")");
+            emu.pressBack(dev);
+            sleep(PROFILE_RECOVERY_BACK_SETTLE_MS);
+        }
         return false;
     }
 
@@ -140,10 +158,10 @@ public class CharacterSwitchHelper {
                 continue;
             }
 
-            // Roster checkmark alone is not proof — confirm from Chief Profile OCR.
+            // Roster OCR already matched the target; Chief Profile OCR confirms when readable.
             if (checkmarkAt(hit.getPoint())) {
                 log.info("Roster shows already active — confirming from Chief Profile");
-                return confirmAlreadyActiveFromChiefProfile(p);
+                return confirmAlreadyActiveFromChiefProfile(p, true);
             }
 
             // Tap and confirm
@@ -198,28 +216,46 @@ public class CharacterSwitchHelper {
                         .withMaxAttempts(1).withThreshold(90).build()).isFound();
     }
 
-    private boolean confirmAlreadyActiveFromChiefProfile(AccountDescriptor p) {
+    private boolean confirmAlreadyActiveFromChiefProfile(AccountDescriptor p, boolean rosterNameMatched) {
         // Switch Character list -> Settings -> Chief Profile
         emu.pressBack(dev);
         sleep(PROFILE_MENU_BACK_SETTLE_MS);
         emu.pressBack(dev);
         sleep(PROFILE_OPEN_SETTLE_MS);
         if (!waitForChiefProfileReady()) {
+            if (rosterNameMatched) {
+                log.warn("Could not return to Chief Profile after roster already-active; "
+                        + "accepting roster name match and checkmark");
+                leaveMenusAfterRosterAccept();
+                return true;
+            }
             log.warn("Could not return to Chief Profile after roster already-active");
             return false;
         }
         sleep(PROFILE_OCR_SETTLE_MS);
-        LiveCharacter live = readLiveCharacter();
-        log.debug("Live char after roster already-active: name='" + live.name() + "' id='" + live.id() + "'");
-        if (!matchesConfigured(live, p.getCharacterName(), p.getCharacterId())) {
-            log.warn("Roster checkmark present but Chief Profile OCR mismatch");
+        LiveCharacter live = readLiveCharacterWithRetries(p.getCharacterName(), p.getCharacterId());
+        log.info("Live char after roster already-active: name='" + live.name() + "' id='" + live.id() + "'");
+        if (hasUsableIdentity(live, p.getCharacterName(), p.getCharacterId())) {
+            if (!matchesConfigured(live, p.getCharacterName(), p.getCharacterId())) {
+                log.warn("Roster checkmark present but Chief Profile OCR mismatch");
+                return false;
+            }
+            log.info("Char verified OK from Chief Profile after roster already-active");
+        } else if (rosterNameMatched) {
+            log.warn("Chief Profile OCR unreadable after roster already-active; "
+                    + "accepting roster name match and checkmark");
+        } else {
+            log.warn("Chief Profile OCR unreadable after roster already-active");
             return false;
         }
-        log.info("Char verified OK from Chief Profile after roster already-active");
+        leaveMenusAfterRosterAccept();
+        return true;
+    }
+
+    private void leaveMenusAfterRosterAccept() {
         emu.pressBack(dev);
         sleep(PROFILE_MENU_BACK_SETTLE_MS);
         lastSwitchRequiredReload = false;
-        return true;
     }
 
     // --- Confirm / cancel dialog ---
@@ -270,6 +306,16 @@ public class CharacterSwitchHelper {
                         .withDelay(PROFILE_READY_RETRY_DELAY_MS)
                         .withThreshold(80)
                         .build());
+        if (readySettingsHit == null || !readySettingsHit.isFound()) {
+            // Overlay chrome can push the gear outside the bottom-right box.
+            readySettingsHit = tpl.locatePattern(
+                    TemplatesEnum.GAME_PROFILE_SETTINGS_BUTTON,
+                    TemplateSearchHelper.SearchConfig.builder()
+                            .withMaxAttempts(3)
+                            .withDelay(PROFILE_READY_RETRY_DELAY_MS)
+                            .withThreshold(80)
+                            .build());
+        }
         boolean ready = readySettingsHit != null && readySettingsHit.isFound();
         if (ready) {
             log.debug("Chief Profile ready (settings control visible)");
@@ -312,6 +358,12 @@ public class CharacterSwitchHelper {
         if (looksLikeIdLeak(liveName)) {
             log.debug("Discarding leaked ID text from name OCR: '" + liveName + "'");
             liveName = null;
+            String fallbackName = ocrRead(CommonGameAreas.CHARACTER_NAME_OCR_FALLBACK_AREA, nameOcrCfg());
+            if (!looksLikeIdLeak(fallbackName)) {
+                liveName = fallbackName;
+            } else if (fallbackName != null) {
+                log.debug("Discarding leaked ID text from fallback name OCR: '" + fallbackName + "'");
+            }
         }
         return new LiveCharacter(liveName, liveId);
     }

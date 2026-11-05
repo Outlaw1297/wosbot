@@ -41,19 +41,32 @@ class CharacterSwitchHelperTest {
     @Test
     void chiefProfileIdentityRegionsKeepNameAboveIdRow() {
         var name = CommonGameAreas.CHARACTER_NAME_OCR_AREA;
+        var fallback = CommonGameAreas.CHARACTER_NAME_OCR_FALLBACK_AREA;
         var id = CommonGameAreas.CHARACTER_ID_OCR_AREA;
 
         assertEquals(277, name.topLeft().getX());
-        assertEquals(817, name.topLeft().getY());
+        assertEquals(790, name.topLeft().getY());
         assertEquals(663, name.bottomRight().getX());
-        assertEquals(878, name.bottomRight().getY());
+        assertEquals(860, name.bottomRight().getY());
+
+        assertEquals(277, fallback.topLeft().getX());
+        assertEquals(760, fallback.topLeft().getY());
+        assertEquals(663, fallback.bottomRight().getX());
+        assertEquals(830, fallback.bottomRight().getY());
+        assertTrue(fallback.bottomRight().getY() <= name.bottomRight().getY());
 
         assertEquals(267, id.topLeft().getX());
-        assertEquals(881, id.topLeft().getY());
-        assertEquals(501, id.bottomRight().getX());
-        assertEquals(937, id.bottomRight().getY());
+        assertEquals(885, id.topLeft().getY());
+        assertEquals(430, id.bottomRight().getX());
+        assertEquals(925, id.bottomRight().getY());
 
         assertTrue(name.bottomRight().getY() <= id.topLeft().getY());
+    }
+
+    @Test
+    void chiefProfileOpenRetriesAfterOverlaySwallow() {
+        assertEquals(3, CharacterSwitchHelper.PROFILE_OPEN_ATTEMPTS);
+        assertEquals(800, CharacterSwitchHelper.PROFILE_RECOVERY_BACK_SETTLE_MS);
     }
 
     @Test

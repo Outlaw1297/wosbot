@@ -241,13 +241,15 @@ public final class CommonGameAreas {
 
     // ── character identity ───────────────────────────────────────────
     // Measured on LDPlayer 720x1280 Chief Profile: name sits above the ID row.
-    // The previous boxes (name y≈890–930, id y≈940–980) read the ID/power rows
-    // instead, producing live OCR like name='ID 181743604' / id='8641'.
-    public static final AreaData CHARACTER_NAME_OCR_AREA = region(277, 817, 663, 878);
-    public static final AreaData CHARACTER_ID_OCR_AREA   = region(267, 881, 501, 937);
+    // Keep the name strip clear of the ID label; a fallback box sits higher when
+    // the primary strip still OCR's `ID …`. Narrow the ID box so furnace/power
+    // digits on the right are not read as a short character ID.
+    public static final AreaData CHARACTER_NAME_OCR_AREA = region(277, 790, 663, 860);
+    public static final AreaData CHARACTER_NAME_OCR_FALLBACK_AREA = region(277, 760, 663, 830);
+    public static final AreaData CHARACTER_ID_OCR_AREA   = region(267, 885, 430, 925);
 
     public static final AreaData PROFILE_SETTINGS_BUTTON_AREA =
-            region(540, 1150, 720, 1250);
+            region(500, 1120, 720, 1260);
     public static final AreaData PROFILE_SETTINGS_SWITCH_CHARACTER_BUTTON_AREA =
             region(30, 280, 340, 380);
     public static final AreaData PROFILE_SETTINGS_SWITCH_CHARACTER_CHARACTER_LIST_AREA =

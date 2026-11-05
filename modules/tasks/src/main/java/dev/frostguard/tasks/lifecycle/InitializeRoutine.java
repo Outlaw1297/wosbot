@@ -1010,52 +1010,104 @@ public class InitializeRoutine extends DelayedTask {
 			logInfo("No character configuration found. Skipping character verification.");
 			return true; // Continue with initialization
 		}
-		
-		// Verify current character
-		boolean characterMatches = characterSwitchHelper.verifyCurrentCharacter(profile);
-		
-		if (!characterMatches) {
-			if (characterSwitchHelper.lastVerifyUnreadable()) {
-				// OCR garbage must not open Settings / roster; Initialize will retry later.
-				logError("Character OCR unreadable on Chief Profile. Not switching; initialization deferred.");
-				isStarted = false;
-				return false;
-			}
 
-			logInfo("Current character does not match profile configuration. Switching character...");
-			
-			// Switch to correct character
-			boolean switchSuccess = characterSwitchHelper.switchToCharacter(profile);
-			
-			if (!switchSuccess) {
-				// Character not found - emulator already closed by helper
-				// According to requirements: do not retry, continue to next profile
-				logError("Character switching failed. Character not found. Continuing to next profile.");
-				// Reset isStarted flag since emulator was closed
-				isStarted = false;
-				// Do not set recurring=true - let queue continue to next profile
-				return false;
-			}
-			
-			if (characterSwitchHelper.lastSwitchRequiredReload()) {
-				// Confirmed switch — wait for the account reload to settle on home.
-				logInfo("Character switch successful. Waiting for game to reload...");
-				sleepTask(CharacterSwitchHelper.CHARACTER_SWITCH_RELOAD_DELAY_MS);
-
+		for (int attempt = 1; attempt <= StartupRecoveryPolicy.CHARACTER_VERIFY_ATTEMPTS; attempt++) {
+			dismissTransientStartupDialogs();
+			if (!searchForHomeScreen()) {
+				logWarning("Home screen not visible before character verify attempt "
+						+ attempt + "/" + StartupRecoveryPolicy.CHARACTER_VERIFY_ATTEMPTS);
 				if (!waitForHomeScreen()) {
 					return false;
 				}
-
-				logInfo("Home screen verified after character switch.");
-			} else {
-				// Roster already-active path confirmed from Chief Profile; no reload.
-				logInfo("Target character was already active; confirmed from Chief Profile.");
 			}
-		} else {
-			logInfo("Character verification passed - correct character is active.");
+
+			boolean characterMatches = characterSwitchHelper.verifyCurrentCharacter(profile);
+			if (characterMatches) {
+				logInfo("Character verification passed - correct character is active.");
+				return true;
+			}
+
+			if (!characterSwitchHelper.lastVerifyUnreadable()) {
+				return switchToConfiguredCharacter();
+			}
+
+			logWarning("Character verify attempt " + attempt + "/"
+					+ StartupRecoveryPolicy.CHARACTER_VERIFY_ATTEMPTS
+					+ " could not read Chief Profile; recovering overlays before retry.");
+			dismissTransientStartupDialogs();
 		}
-		
+
+		deferCharacterVerifyFailure();
+		return false;
+	}
+
+	private boolean switchToConfiguredCharacter() {
+		logInfo("Current character does not match profile configuration. Switching character...");
+
+		boolean switchSuccess = characterSwitchHelper.switchToCharacter(profile);
+		if (!switchSuccess) {
+			// Character not found - emulator already closed by helper
+			// According to requirements: do not retry, continue to next profile
+			logError("Character switching failed. Character not found. Continuing to next profile.");
+			isStarted = false;
+			return false;
+		}
+
+		if (characterSwitchHelper.lastSwitchRequiredReload()) {
+			logInfo("Character switch successful. Waiting for game to reload...");
+			sleepTask(CharacterSwitchHelper.CHARACTER_SWITCH_RELOAD_DELAY_MS);
+			if (!waitForHomeScreen()) {
+				return false;
+			}
+			logInfo("Home screen verified after character switch.");
+		} else {
+			logInfo("Target character was already active; confirmed from roster/Chief Profile.");
+		}
 		return true;
+	}
+
+	/**
+	 * One pass of known startup dialogs that can sit on home and swallow the
+	 * avatar tap used for character verification.
+	 */
+	private void dismissTransientStartupDialogs() {
+		if (dismissWelcomeBackIfPresent()) {
+			logInfo("Dismissed Welcome back before character verification.");
+			sleepTask(1000);
+		}
+		if (dismissGettingPopularIfPresent()) {
+			logInfo("Dismissed Getting Popular before character verification.");
+			sleepTask(1000);
+		}
+		if (dismissCloseableStartupOverlayIfPresent()) {
+			logInfo("Dismissed closeable startup overlay before character verification.");
+			sleepTask(1000);
+		}
+		if (dismissTrekExitHintIfPresent()) {
+			logInfo("Dismissed Trek exit hint before character verification.");
+			sleepTask(1000);
+		}
+	}
+
+	private void deferCharacterVerifyFailure() {
+		LocalDateTime retryAt = LocalDateTime.now().plus(StartupRecoveryPolicy.CHARACTER_VERIFY_COOLDOWN);
+		StartupBlockerSnapshots.Retention snapshot = retainTerminalSnapshot(
+				StartupBlockerSnapshots.TYPE_INITIALIZE_BLOCKED);
+		logError("Character verification blocked on Chief Profile for profile=" + profile.getName()
+				+ "; yielding emulator slot until " + retryAt
+				+ "; snapshot=" + snapshot.logToken()
+				+ "; snapshotBasis=" + snapshot.basis() + ".");
+		throw new ProfileCooldownException(
+				"Chief Profile character check blocked by overlay or unreadable OCR",
+				retryAt,
+				new ActionRequiredContext(
+						"startup.character-verify-blocked",
+						"Character verification could not open or read Chief Profile",
+						"Chief Profile with readable name/ID",
+						"overlay or unreadable Chief Profile",
+						"Avatar tap / Settings wait / OCR retries exhausted",
+						"Dismiss leftover dialogs if still visible; Frostguard retries after five minutes"))
+				.withEvidencePath(snapshot.saved() ? snapshot.relativePath() : "");
 	}
 
 	/**

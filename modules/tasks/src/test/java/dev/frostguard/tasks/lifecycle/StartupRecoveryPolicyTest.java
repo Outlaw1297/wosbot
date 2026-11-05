@@ -29,5 +29,7 @@ class StartupRecoveryPolicyTest {
         assertEquals(Duration.ofMinutes(15), StartupRecoveryPolicy.UNKNOWN_BLOCKER_COOLDOWN);
         assertEquals(Duration.ofMinutes(15), StartupRecoveryPolicy.UPDATE_FOLLOW_UP_COOLDOWN);
         assertEquals(Duration.ofHours(1), StartupRecoveryPolicy.PLAY_STORE_REDIRECT_COOLDOWN);
+        assertEquals(Duration.ofMinutes(5), StartupRecoveryPolicy.CHARACTER_VERIFY_COOLDOWN);
+        assertEquals(3, StartupRecoveryPolicy.CHARACTER_VERIFY_ATTEMPTS);
     }
 }
