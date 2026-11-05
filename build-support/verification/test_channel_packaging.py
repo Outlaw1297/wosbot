@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import base64
 import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -348,6 +349,92 @@ class ChannelPackagingTest(unittest.TestCase):
         self.assertIn("--changes-unchanged", workflow)
         self.assertIn("fetch-depth: 0", workflow)
         self.assertNotIn("gh release create", workflow)
+
+    def test_nightly_dev_signing_requires_repository_secret_and_rotated_key(self):
+        deleted_private_key_name = "update-signing-private-key" + ".base64"
+        private_key = (REPO_ROOT / "packaging/desktop/src/main/nightly-dev"
+                       / deleted_private_key_name)
+        self.assertFalse(private_key.exists())
+
+        workflow = (REPO_ROOT / ".github/workflows/build-nightly-dev.yml").read_text(
+            encoding="utf-8")
+        signing = workflow.split("Generate and sign Nightly Dev update manifest", 1)[1]
+        signing = signing.split("Publish immutable release and promote rolling nightly_dev feed", 1)[0]
+        publish = workflow.split(
+            "Publish immutable release and promote rolling nightly_dev feed", 1)[1]
+        self.assertNotIn(deleted_private_key_name, workflow)
+        self.assertIn("Require Nightly Dev update-signing secret", workflow)
+        self.assertGreaterEqual(
+            workflow.count(
+                "FROSTGUARD_NIGHTLY_DEV_UPDATE_SIGNING_PRIVATE_KEY_BASE64 is empty"),
+            2)
+        self.assertIn(
+            "FROSTGUARD_NIGHTLY_DEV_UPDATE_SIGNING_PRIVATE_KEY_BASE64 is empty",
+            signing)
+        self.assertIn("Refusing to write or publish an unsigned manifest.", signing)
+        self.assertIn('"signed=true"', signing)
+        self.assertIn("MANIFEST_SIGNED: ${{ steps.manifest.outputs.signed }}", publish)
+        self.assertIn("An unsigned manifest must never be published.", publish)
+        self.assertLess(
+            publish.index("An unsigned manifest must never be published."),
+            publish.index("gh release upload $env:TAG $env:MANIFEST"))
+        self.assertLess(
+            publish.index("An unsigned manifest must never be published."),
+            publish.index("gh release edit $env:TAG"))
+
+        expected_key = (
+            "keyId=frostguard-nightly-dev-outlaw1297-2026-11b\n"
+            "publicKey=MCowBQYDK2VwAyEAIx1MO9XFgSEqorX9DZsmemDX+gjReYovc6XfDnlcyZ8=\n"
+        )
+        nightly_dev = REPO_ROOT / "packaging/desktop/src/main/nightly-dev"
+        pinned = (nightly_dev / "project-update-key.properties").read_text(encoding="utf-8")
+        embedded = (nightly_dev / "dev/frostguard/update/project-update-key.properties").read_text(
+            encoding="utf-8")
+        self.assertEqual(expected_key, pinned)
+        self.assertEqual(expected_key, embedded)
+        public_key = base64.b64decode(
+            "MCowBQYDK2VwAyEAIx1MO9XFgSEqorX9DZsmemDX+gjReYovc6XfDnlcyZ8=",
+            validate=True)
+        self.assertEqual(44, len(public_key))
+        self.assertEqual(bytes.fromhex("302a300506032b6570032100"), public_key[:12])
+
+        stable_key = (REPO_ROOT / "modules/update/src/main/resources"
+                      / "dev/frostguard/update/project-update-key.properties").read_text(
+            encoding="utf-8")
+        self.assertIn("keyId=frostguard-update-2026-01", stable_key)
+        self.assertNotIn("frostguard-nightly-dev-outlaw1297-2026-11b", stable_key)
+
+        readme = (nightly_dev / "README.md").read_text(encoding="utf-8")
+        self.assertIn(
+            "FROSTGUARD_NIGHTLY_DEV_UPDATE_SIGNING_PRIVATE_KEY_BASE64", readme)
+        self.assertIn("Base64 PKCS#8", readme)
+        self.assertIn("November 2026", readme)
+        self.assertIn("one-time reinstall of the MSI", readme)
+        self.assertNotIn(deleted_private_key_name, readme)
+
+        scanned_roots = (
+            REPO_ROOT / ".github",
+            REPO_ROOT / "build-support",
+            REPO_ROOT / "docs",
+            REPO_ROOT / "packaging",
+            REPO_ROOT / "modules",
+            REPO_ROOT / "README.md",
+        )
+        for root in scanned_roots:
+            paths = [root] if root.is_file() else (
+                path for path in root.rglob("*") if path.is_file())
+            for path in paths:
+                if path.suffix.lower() not in {
+                    ".yml", ".yaml", ".py", ".md", ".java", ".properties", ".xml",
+                    ".ps1", ".sh", ".txt",
+                }:
+                    continue
+                text = path.read_text(encoding="utf-8", errors="strict")
+                self.assertNotIn(
+                    deleted_private_key_name,
+                    text,
+                    f"{path.relative_to(REPO_ROOT)} still references the deleted private key",
+                )
 
 
 if __name__ == "__main__":

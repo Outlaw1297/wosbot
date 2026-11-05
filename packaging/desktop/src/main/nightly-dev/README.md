@@ -6,8 +6,12 @@ Frostguard Nightly Dev embeds this fork-local Ed25519 public key and checks:
 
 It never uses the official Stable/Nightly update feed.
 
-`update-signing-private-key.base64` signs that rolling channel from the
-`Build — Windows Nightly Dev` workflow. Prefer moving the private key into the
-repository secret `FROSTGUARD_NIGHTLY_DEV_UPDATE_SIGNING_PRIVATE_KEY_BASE64` and
-deleting the committed private key before any upstream contribution of this
-channel.
+The private key lives only in the repository secret
+`FROSTGUARD_NIGHTLY_DEV_UPDATE_SIGNING_PRIVATE_KEY_BASE64` (Base64 PKCS#8
+Ed25519). `Build — Windows Nightly Dev` reads that secret when it signs the
+rolling channel. If the secret is empty, signing fails and no manifest is
+published. Do not commit a private key.
+
+The key was rotated in November 2026. Existing Nightly Dev installs, which
+trust the old public key, need a one-time reinstall of the MSI before they can
+verify updates signed by `frostguard-nightly-dev-outlaw1297-2026-11b`.
