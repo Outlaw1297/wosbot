@@ -9,7 +9,17 @@ import java.util.List;
 
 public class ChiefOrderLayoutController extends AbstractProfileController {
     @FXML
+    private CheckBox checkBoxCrunchTime;
+    @FXML
     private CheckBox checkBoxRushJob;
+    @FXML
+    private CheckBox checkBoxComprehensiveCare;
+    @FXML
+    private CheckBox checkBoxDoubleTime;
+    @FXML
+    private CheckBox checkBoxAdvancedTraining;
+    @FXML
+    private CheckBox checkBoxDawnAllianceCommendation;
     @FXML
     private CheckBox checkBoxUrgentMobilisation;
     @FXML
@@ -21,28 +31,18 @@ public class ChiefOrderLayoutController extends AbstractProfileController {
         initializeChangeEvents();
     }
 
-    public boolean isRushJobEnabled() { /* bind */
-        return isSelected(checkBoxRushJob);
-    }
-
-    public boolean isUrgentMobilisationEnabled() { /* bind */
-        return isSelected(checkBoxUrgentMobilisation);
-    }
-
-    public boolean isProductivityDayEnabled() { /* bind */
-        return isSelected(checkBoxProductivityDay);
-    }
-
     private List<OrderSwitch> chiefOrderSwitches() { /* internal */
         return List.of(
+            new OrderSwitch(checkBoxCrunchTime, ConfigurationKeyEnum.BOOL_CHIEF_ORDER_CRUNCH_TIME),
             new OrderSwitch(checkBoxRushJob, ConfigurationKeyEnum.BOOL_CHIEF_ORDER_RUSH_JOB),
+            new OrderSwitch(checkBoxComprehensiveCare, ConfigurationKeyEnum.BOOL_CHIEF_ORDER_COMPREHENSIVE_CARE),
+            new OrderSwitch(checkBoxDoubleTime, ConfigurationKeyEnum.BOOL_CHIEF_ORDER_DOUBLE_TIME),
+            new OrderSwitch(checkBoxAdvancedTraining, ConfigurationKeyEnum.BOOL_CHIEF_ORDER_ADVANCED_TRAINING),
+            new OrderSwitch(checkBoxDawnAllianceCommendation,
+                    ConfigurationKeyEnum.BOOL_CHIEF_ORDER_DAWN_ALLIANCE_COMMENDATION),
             new OrderSwitch(checkBoxUrgentMobilisation, ConfigurationKeyEnum.BOOL_CHIEF_ORDER_URGENT_MOBILISATION),
             new OrderSwitch(checkBoxProductivityDay, ConfigurationKeyEnum.BOOL_CHIEF_ORDER_PRODUCTIVITY_DAY)
         );
-    }
-
-    private boolean isSelected(CheckBox checkBox) { /* internal */
-        return checkBox != null && checkBox.isSelected();
     }
 
     private record OrderSwitch(CheckBox control, ConfigurationKeyEnum configKey) {

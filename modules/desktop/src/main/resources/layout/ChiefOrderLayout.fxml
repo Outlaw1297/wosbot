@@ -32,12 +32,22 @@
 
                                         <VBox styleClass="task-subsection" spacing="14">
                                             <children>
+                                                <CheckBox fx:id="checkBoxCrunchTime" mnemonicParsing="false"
+                                                          graphicTextGap="3.0" text="Crunch Time (every 12h)" />
                                                 <CheckBox fx:id="checkBoxRushJob" mnemonicParsing="false"
                                                           graphicTextGap="3.0" text="Rush Job (every 24h)" />
+                                                <CheckBox fx:id="checkBoxComprehensiveCare" mnemonicParsing="false"
+                                                          graphicTextGap="3.0" text="Comprehensive Care (every 12h)" />
+                                                <CheckBox fx:id="checkBoxDoubleTime" mnemonicParsing="false"
+                                                          graphicTextGap="3.0" text="Double Time (every 12h)" />
+                                                <CheckBox fx:id="checkBoxAdvancedTraining" mnemonicParsing="false"
+                                                          graphicTextGap="3.0" text="Advanced Training (every 12h)" />
+                                                <CheckBox fx:id="checkBoxDawnAllianceCommendation" mnemonicParsing="false"
+                                                          graphicTextGap="3.0" text="Dawn Alliance Commendation (every 12h)" />
                                                 <CheckBox fx:id="checkBoxUrgentMobilisation" mnemonicParsing="false"
-                                                          graphicTextGap="3.0" text="Urgent Mobilisation (every 8h)" />
+                                                          graphicTextGap="3.0" text="Urgent Mobilisation (every 8h, legacy)" />
                                                 <CheckBox fx:id="checkBoxProductivityDay" mnemonicParsing="false"
-                                                          graphicTextGap="3.0" text="Productivity Day (every 12h)" />
+                                                          graphicTextGap="3.0" text="Productivity Day (every 12h, legacy)" />
                                             </children>
                                         </VBox>
                                     </children>

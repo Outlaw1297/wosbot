@@ -15,12 +15,16 @@ public class ChiefOrderRoutine extends DelayedTask {
 public enum ChiefOrderType {
 
 		RUSH_JOB("Rush Job", TemplatesEnum.CHIEF_ORDER_RUSH_JOB, 24),
-
-
 		URGENT_MOBILIZATION("Urgent Mobilization", TemplatesEnum.CHIEF_ORDER_URGENT_MOBILISATION, 8),
-
-
-		PRODUCTIVITY_DAY("Productivity Day", TemplatesEnum.CHIEF_ORDER_PRODUCTIVITY_DAY, 12);
+		PRODUCTIVITY_DAY("Productivity Day", TemplatesEnum.CHIEF_ORDER_PRODUCTIVITY_DAY, 12),
+		// Current 720x1280 shelf (2x3). Crunch Time detail shows a 12h cooldown;
+		// the other new shelf orders use the same until measured otherwise.
+		CRUNCH_TIME("Crunch Time", TemplatesEnum.CHIEF_ORDER_CRUNCH_TIME, 12),
+		COMPREHENSIVE_CARE("Comprehensive Care", TemplatesEnum.CHIEF_ORDER_COMPREHENSIVE_CARE, 12),
+		DOUBLE_TIME("Double Time", TemplatesEnum.CHIEF_ORDER_DOUBLE_TIME, 12),
+		ADVANCED_TRAINING("Advanced Training", TemplatesEnum.CHIEF_ORDER_ADVANCED_TRAINING, 12),
+		DAWN_ALLIANCE_COMMENDATION("Dawn Alliance Commendation",
+				TemplatesEnum.CHIEF_ORDER_DAWN_ALLIANCE_COMMENDATION, 12);
 
 		private final String description;
 		private final TemplatesEnum template;
