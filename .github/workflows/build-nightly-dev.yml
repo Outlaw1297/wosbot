@@ -1,0 +1,375 @@
+name: Build — Windows Nightly Dev
+
+# Side-by-side verification MSI for the Outlaw1297 fork. Distinct from
+# Stable/Nightly: channel nightly_dev, product "Frostguard Nightly Dev",
+# separate upgrade UUID / workspace, and Config > Updates points only at
+# https://github.com/Outlaw1297/wosbot/releases/tag/nightly_dev
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "cursor/fix-character-roster-scroll-b3cb"
+      - "main"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-nightly-dev-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  MAVEN_ARGS: "-B --no-transfer-progress -Dstyle.color=never"
+  CHANNEL: nightly_dev
+  MANIFEST_NAME: frostguard-nightly_dev-manifest.json
+  NIGHTLY_DEV_MANIFEST_URL: https://github.com/Outlaw1297/wosbot/releases/download/nightly_dev/frostguard-nightly_dev-manifest.json
+  NIGHTLY_DEV_PAGE_URL: https://github.com/Outlaw1297/wosbot/releases/tag/nightly_dev
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  package:
+    name: Build and publish Frostguard Nightly Dev
+    runs-on: windows-latest
+    timeout-minutes: 75
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          lfs: false
+
+      - name: Require Nightly Dev update-signing secret
+        shell: pwsh
+        env:
+          FROSTGUARD_NIGHTLY_DEV_UPDATE_SIGNING_PRIVATE_KEY_BASE64: ${{ secrets.FROSTGUARD_NIGHTLY_DEV_UPDATE_SIGNING_PRIVATE_KEY_BASE64 }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:FROSTGUARD_NIGHTLY_DEV_UPDATE_SIGNING_PRIVATE_KEY_BASE64)) {
+              throw "FROSTGUARD_NIGHTLY_DEV_UPDATE_SIGNING_PRIVATE_KEY_BASE64 is empty. Nightly Dev signing requires that repository secret (Base64 PKCS#8 Ed25519). Refusing to build or publish an unsigned manifest."
+          }
+
+      - name: Verify shipped binaries are real files
+        shell: bash
+        run: build-support/verification/check_lfs_assets.sh
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21.0.12+8.0.LTS"
+          cache: maven
+
+      - name: Install WiX Toolset 3
+        shell: pwsh
+        run: |
+          choco install wixtoolset --version=3.14.1.20250415 --no-progress -y
+          $wixBin = "${env:ProgramFiles(x86)}\WiX Toolset v3.14\bin"
+          if (-not (Test-Path -LiteralPath (Join-Path $wixBin "candle.exe"))) {
+              throw "WiX candle.exe was not installed below $wixBin"
+          }
+          $wixBin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Resolve Nightly Dev version identity
+        id: identity
+        shell: pwsh
+        run: |
+          $previous = $null
+          $releasesJson = gh release list --repo $env:GITHUB_REPOSITORY --limit 100 `
+              --json tagName,isPrerelease,isDraft 2>$null
+          if ($LASTEXITCODE -eq 0) {
+              # Include drafts so a failed publish still advances the sequence.
+              $tags = @(($releasesJson | ConvertFrom-Json) |
+                  Where-Object { $_.tagName -like 'v*-nightly-dev.*' } |
+                  ForEach-Object { $_.tagName.TrimStart('v') })
+              if ($tags.Count -gt 0) {
+                  $previous = $tags[0]
+              }
+          }
+          $versionArgs = @('--base-version', '3.0.2')
+          if ($previous) {
+              $versionArgs = @('--previous-version', $previous)
+          }
+          $version = python build-support/release/next_nightly_dev_version.py @versionArgs
+          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($version)) {
+              throw "Could not derive Nightly Dev version"
+          }
+          $windowsVersion = python build-support/release/windows_installer_version.py `
+              --channel nightly_dev --version $version
+          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($windowsVersion)) {
+              throw "Could not derive Nightly Dev Windows installer version"
+          }
+          $tag = "v$version"
+          $installerName = "Frostguard-Nightly-Dev-$version-windows-x64.msi"
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "windows_version=$windowsVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "installer_name=$installerName" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Build Nightly Dev application image
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.identity.outputs.version }}
+          WINDOWS_VERSION: ${{ steps.identity.outputs.windows_version }}
+        run: |
+          $mavenArgs = $env:MAVEN_ARGS -split " "
+          & .\mvnw.cmd @mavenArgs `
+              "-Drevision=$($env:VERSION)" `
+              "-Dfrostguard.windows.app-version=$($env:WINDOWS_VERSION)" `
+              "-Pwindows-app-image,windows-nightly-dev" package
+
+      - name: Build accepted Nightly bootstrap donor for Nightly Dev
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.identity.outputs.version }}
+          WINDOWS_VERSION: ${{ steps.identity.outputs.windows_version }}
+        run: |
+          $mavenArgs = $env:MAVEN_ARGS -split " "
+          & .\mvnw.cmd @mavenArgs -pl packaging/desktop -am -DskipTests `
+              "-Drevision=$($env:VERSION)" `
+              "-Dfrostguard.windows.app-version=$($env:WINDOWS_VERSION)" `
+              "-Pwindows-app-image,windows-nightly" package
+          & build-support/packaging/use_nightly_bootstrap_for_nightly_dev.ps1 `
+              -NightlyDevImage "packaging/desktop/target/app-image/Frostguard Nightly Dev" `
+              -NightlyImage "packaging/desktop/target/app-image/Frostguard Nightly"
+
+      - name: Test packaging verifiers
+        run: |
+          python build-support/verification/test_verify_app_image.py
+          python build-support/verification/test_channel_packaging.py
+
+      - name: Verify Nightly Dev application image
+        run: >-
+          python build-support/verification/verify_app_image.py
+          "packaging/desktop/target/app-image/Frostguard Nightly Dev"
+          --channel nightly_dev
+          --product-name "Frostguard Nightly Dev"
+          --expected-desktop-launcher-sha256 5c728d3662d64c428d003874f6d62b798bbbe329f595b2b15a2ab5ab1fd1faa9
+          --expected-watcher-launcher-sha256 9c7452d890f39c7f4fdb2e5519993514c84f071deef222fe49784acfd459c209
+
+      - name: Smoke test Nightly Dev launchers and workspace isolation
+        shell: pwsh
+        run: |
+          powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass `
+              -File build-support/verification/smoke_test_app_image.ps1 `
+              -ImagePath "packaging/desktop/target/app-image/Frostguard Nightly Dev" `
+              -Channel nightly_dev `
+              -ProductName "Frostguard Nightly Dev" `
+              -BootstrapProductName "Frostguard Nightly"
+
+      - name: Build Nightly Dev installer from verified application image
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.identity.outputs.version }}
+          WINDOWS_VERSION: ${{ steps.identity.outputs.windows_version }}
+        run: |
+          $mavenArgs = $env:MAVEN_ARGS -split " "
+          & .\mvnw.cmd @mavenArgs -pl packaging/desktop -am -DskipTests `
+              "-Drevision=$($env:VERSION)" `
+              "-Dfrostguard.windows.app-version=$($env:WINDOWS_VERSION)" `
+              "-Pwindows-installer,windows-nightly-dev" package
+
+      - name: Prepare immutable Nightly Dev installer
+        id: installer
+        shell: pwsh
+        env:
+          INSTALLER_NAME: ${{ steps.identity.outputs.installer_name }}
+        run: |
+          $source = @(Get-ChildItem `
+              -LiteralPath packaging/desktop/target/installers/nightly_dev `
+              -Filter "*.msi" -File)
+          if ($source.Count -ne 1) {
+              throw "Expected exactly one Nightly Dev installer, found $($source.Count)"
+          }
+          if ($source[0].Length -lt 1MB) {
+              throw "Nightly Dev installer is unexpectedly small: $($source[0].Length) bytes"
+          }
+          $installer = Join-Path $env:RUNNER_TEMP $env:INSTALLER_NAME
+          Copy-Item -LiteralPath $source[0].FullName -Destination $installer
+          "path=$installer" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Upload Nightly Dev installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frostguard-nightly-dev-windows-installer
+          path: ${{ steps.installer.outputs.path }}
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+      - name: Create immutable Nightly Dev draft release
+        id: draft
+        shell: pwsh
+        env:
+          TAG: ${{ steps.identity.outputs.tag }}
+          VERSION: ${{ steps.identity.outputs.version }}
+          INSTALLER: ${{ steps.installer.outputs.path }}
+          INSTALLER_NAME: ${{ steps.identity.outputs.installer_name }}
+        run: |
+          $notes = @"
+          Frostguard Nightly Dev $env:VERSION for fork verification on Outlaw1297/wosbot.
+
+          This channel is separate from Stable and Nightly. Config > Updates on this
+          build reads only the rolling ``nightly_dev`` feed on this fork.
+          "@
+          gh release create $env:TAG $env:INSTALLER `
+              --repo $env:GITHUB_REPOSITORY `
+              --target $env:GITHUB_SHA `
+              --title "Frostguard Nightly Dev $env:VERSION" `
+              --notes $notes `
+              --prerelease --draft
+          if ($LASTEXITCODE -ne 0) {
+              throw "Could not create Nightly Dev draft release"
+          }
+          $publicInstallerUrl = "https://github.com/$($env:GITHUB_REPOSITORY)" +
+              "/releases/download/$($env:TAG)/$($env:INSTALLER_NAME)"
+          "download_url=$publicInstallerUrl" | Out-File `
+              -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "tag_created=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Generate and sign Nightly Dev update manifest
+        id: manifest
+        shell: pwsh
+        env:
+          INSTALLER: ${{ steps.installer.outputs.path }}
+          INSTALLER_URL: ${{ steps.draft.outputs.download_url }}
+          TAG: ${{ steps.identity.outputs.tag }}
+          VERSION: ${{ steps.identity.outputs.version }}
+          FROSTGUARD_NIGHTLY_DEV_UPDATE_SIGNING_PRIVATE_KEY_BASE64: ${{ secrets.FROSTGUARD_NIGHTLY_DEV_UPDATE_SIGNING_PRIVATE_KEY_BASE64 }}
+        run: |
+          # The private key exists only as a repository secret. Fail before any
+          # manifest file is written so an empty secret cannot be published.
+          $privateKey = $env:FROSTGUARD_NIGHTLY_DEV_UPDATE_SIGNING_PRIVATE_KEY_BASE64
+          if ([string]::IsNullOrWhiteSpace($privateKey)) {
+              throw "FROSTGUARD_NIGHTLY_DEV_UPDATE_SIGNING_PRIVATE_KEY_BASE64 is empty. Nightly Dev signing requires that repository secret (Base64 PKCS#8 Ed25519). Refusing to write or publish an unsigned manifest."
+          }
+          $env:FROSTGUARD_UPDATE_SIGNING_PRIVATE_KEY_BASE64 = $privateKey.Trim()
+
+          $manifest = Join-Path $env:RUNNER_TEMP $env:MANIFEST_NAME
+          $payload = Join-Path $env:RUNNER_TEMP "payload-$($env:MANIFEST_NAME)"
+          $manifestReady = $false
+          try {
+              $publishedAt = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+              $releaseNotes = "https://github.com/$($env:GITHUB_REPOSITORY)/releases/tag/$($env:TAG)"
+              python build-support/release/write_update_manifest.py `
+                  --channel nightly_dev --version $env:VERSION `
+                  --minimum-updater-version 3.0.0 `
+                  --published-at $publishedAt --release-notes-url $releaseNotes `
+                  --installer-url $env:INSTALLER_URL --installer $env:INSTALLER `
+                  --output $payload
+              if ($LASTEXITCODE -ne 0) {
+                  throw "Nightly Dev manifest payload could not be written"
+              }
+
+              Copy-Item -Force `
+                  packaging/desktop/src/main/nightly-dev/project-update-key.properties `
+                  modules/update/target/classes/dev/frostguard/update/project-update-key.properties
+
+              java -cp "modules/update/target/classes" `
+                  dev.frostguard.update.ProjectManifestSigner sign $payload $manifest
+              if ($LASTEXITCODE -ne 0) {
+                  throw "Nightly Dev manifest could not be signed"
+              }
+              # verify() parses JSON through Jackson from the staged runtime libs.
+              $verificationClasspath =
+                  "modules/update/target/classes;modules/api/target/classes;packaging/desktop/target/input/lib/*"
+              java -cp $verificationClasspath `
+                  dev.frostguard.update.ProjectManifestSigner verify $manifest
+              if ($LASTEXITCODE -ne 0) {
+                  throw "Nightly Dev signed manifest verification failed"
+              }
+              "path=$manifest" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+              "signed=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+              $manifestReady = $true
+          } finally {
+              if (Test-Path -LiteralPath $payload) {
+                  Remove-Item -LiteralPath $payload -Force
+              }
+              if (-not $manifestReady -and (Test-Path -LiteralPath $manifest)) {
+                  Remove-Item -LiteralPath $manifest -Force
+              }
+          }
+
+      - name: Publish immutable release and promote rolling nightly_dev feed
+        shell: pwsh
+        env:
+          TAG: ${{ steps.identity.outputs.tag }}
+          VERSION: ${{ steps.identity.outputs.version }}
+          MANIFEST: ${{ steps.manifest.outputs.path }}
+          MANIFEST_SIGNED: ${{ steps.manifest.outputs.signed }}
+          INSTALLER_NAME: ${{ steps.identity.outputs.installer_name }}
+        run: |
+          if ($env:MANIFEST_SIGNED -ne 'true' -or
+              [string]::IsNullOrWhiteSpace($env:MANIFEST) -or
+              -not (Test-Path -LiteralPath $env:MANIFEST -PathType Leaf)) {
+              throw "Refusing to publish Nightly Dev: signed manifest is missing. An unsigned manifest must never be published."
+          }
+          $envelope = Get-Content -Raw -LiteralPath $env:MANIFEST | ConvertFrom-Json
+          $pinnedKeyId = @(Get-Content -LiteralPath `
+              packaging/desktop/src/main/nightly-dev/project-update-key.properties |
+              Where-Object { $_ -like 'keyId=*' } |
+              ForEach-Object { $_.Substring(6) }) | Select-Object -First 1
+          if ($envelope.envelopeVersion -ne 1 -or
+              $envelope.algorithm -cne 'Ed25519' -or
+              [string]::IsNullOrWhiteSpace([string]$envelope.signature) -or
+              [string]::IsNullOrWhiteSpace([string]$envelope.payload) -or
+              [string]::IsNullOrWhiteSpace($pinnedKeyId) -or
+              $envelope.keyId -cne $pinnedKeyId) {
+              throw "Refusing to publish Nightly Dev: manifest is not a signed envelope for the pinned Nightly Dev key. An unsigned manifest must never be published."
+          }
+
+          gh release upload $env:TAG $env:MANIFEST --repo $env:GITHUB_REPOSITORY
+          if ($LASTEXITCODE -ne 0) {
+              throw "Signed Nightly Dev manifest could not be uploaded"
+          }
+          gh release edit $env:TAG --repo $env:GITHUB_REPOSITORY --draft=false --prerelease
+          if ($LASTEXITCODE -ne 0) {
+              throw "Nightly Dev immutable release could not be published"
+          }
+
+          $immutableUrl = "https://github.com/$($env:GITHUB_REPOSITORY)/releases/tag/$($env:TAG)"
+          $channelNotes = @"
+          Permanent Frostguard Nightly Dev channel for Outlaw1297/wosbot.
+
+          **Current build:** [$($env:VERSION)]($immutableUrl)
+
+          Config > Updates on Frostguard Nightly Dev reads only this rolling feed.
+          It does not follow official Stable or Nightly releases.
+          "@
+
+          $releaseTags = @(gh release list --repo $env:GITHUB_REPOSITORY `
+              --limit 1000 --json tagName --jq '.[].tagName')
+          if (-not ($releaseTags -contains 'nightly_dev')) {
+              gh release create nightly_dev --repo $env:GITHUB_REPOSITORY `
+                  --target $env:GITHUB_SHA `
+                  --title "Frostguard Nightly Dev - Latest" `
+                  --notes $channelNotes --prerelease
+              if ($LASTEXITCODE -ne 0) {
+                  throw "Permanent Nightly Dev channel could not be created"
+              }
+          }
+
+          gh release upload nightly_dev $env:MANIFEST --repo $env:GITHUB_REPOSITORY --clobber
+          if ($LASTEXITCODE -ne 0) {
+              throw "Permanent Nightly Dev manifest could not be promoted"
+          }
+
+          $rollingJson = gh api "repos/$($env:GITHUB_REPOSITORY)/releases/tags/nightly_dev"
+          if ($LASTEXITCODE -ne 0) {
+              throw "Permanent Nightly Dev channel could not be resolved after promotion"
+          }
+          $rolling = $rollingJson | ConvertFrom-Json
+          foreach ($asset in @($rolling.assets |
+              Where-Object { $_.name -cne $env:MANIFEST_NAME })) {
+              gh api --method DELETE `
+                  "repos/$($env:GITHUB_REPOSITORY)/releases/assets/$($asset.id)"
+              if ($LASTEXITCODE -ne 0) {
+                  throw "Legacy Nightly Dev asset $($asset.name) could not be retired"
+              }
+          }
+          gh release edit nightly_dev --repo $env:GITHUB_REPOSITORY `
+              --title "Frostguard Nightly Dev - Latest" --notes $channelNotes `
+              --target $env:GITHUB_SHA --prerelease
+          if ($LASTEXITCODE -ne 0) {
+              throw "Permanent Nightly Dev channel metadata could not be updated"
+          }
