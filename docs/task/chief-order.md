@@ -10,4 +10,4 @@ use a 12-hour reschedule until measured otherwise. Rush Job remains 24 hours.
 Legacy Urgent Mobilisation and Productivity Day stay available for older shelves.
 
 Cooldown overlays hide or darken a book, so a missing shelf-icon match is treated
-as unavailable and retried later rather than as a false enact success.
+as unavailable and retried later rather than as a false enact success. 
