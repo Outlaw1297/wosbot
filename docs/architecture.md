@@ -310,12 +310,15 @@ and automatic Nightly-to-Stable migration are not supported.
 The installed desktop exposes update controls only for eligible Stable or
 Nightly builds. A selected installer is downloaded to
 `<workspace>/cache/updates/<channel>/<version>`, verified, and passed to a
-hidden PowerShell waiter. Windows releases publish the MSI package directly;
-the jpackage EXE bootstrap wrapper is not part of the update contract. The
-waiter requires a one-time authorization token and waits for the Frostguard PID
-to disappear before invoking `msiexec` for the same published MSI in passive,
-no-restart mode. It pins `INSTALLDIR` to the running
-launcher's parent so upgrades retain a user-selected installation directory.
+detached on-disk `.cmd` waiter launched through `cmd.exe`. The waiter must not
+use PowerShell `-EncodedCommand` / `-ExecutionPolicy Bypass` payloads: that
+command-line pattern trips Norton Behavioral Protection (`IDP.HELU.PSE96%s_cmd`)
+even when Frostguard itself is file-exempted. Windows releases publish the MSI
+package directly; the jpackage EXE bootstrap wrapper is not part of the update
+contract. The waiter requires a one-time authorization token and waits for the
+Frostguard PID to disappear before invoking `msiexec` for the same published MSI
+in passive, no-restart mode. It pins `INSTALLDIR` to the running launcher's
+parent so upgrades retain a user-selected installation directory.
 Frostguard authorizes the staged waiter, stops queues and workspace-owned
 services, closes SQLite and the workspace lock, and exits. A failed shutdown
 cancels the authorization, and the waiter cannot start the installer while the

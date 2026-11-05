@@ -17,8 +17,13 @@ class WindowsAuthenticodeVerifierTest {
     void acceptsValidExpectedPublisher() throws Exception {
         Path installer = Files.writeString(temp.resolve("installer.msi"), "test");
         WindowsAuthenticodeVerifier verifier = new WindowsAuthenticodeVerifier(
-                (command, environment, timeout) -> new CommandRunner.CommandResult(
-                        0, "Valid\tCN=Frostguard Project, O=Frostguard"));
+                (command, environment, timeout) -> {
+                    org.junit.jupiter.api.Assertions.assertTrue(command.contains("-File"));
+                    org.junit.jupiter.api.Assertions.assertFalse(command.contains("-EncodedCommand"));
+                    org.junit.jupiter.api.Assertions.assertFalse(command.contains("-Command"));
+                    return new CommandRunner.CommandResult(
+                            0, "Valid\tCN=Frostguard Project, O=Frostguard");
+                });
 
         assertDoesNotThrow(() -> verifier.verify(installer,
                 new SignatureRequirement("authenticode", "CN=Frostguard Project, O=Frostguard")));

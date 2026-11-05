@@ -315,8 +315,11 @@ Downloads belong to the selected workspace under
 is never exposed as a completed installer. Completion requires an atomic rename
 after size and hash verification.
 
-The external Windows handoff receives the Frostguard PID plus a one-time token.
-Frostguard authorizes the staged waiter immediately before coordinated
-shutdown. The waiter cannot start the installer while the Frostguard PID is
-alive, and a failed shutdown deletes the token so a later unrelated application
-exit cannot launch the staged installer.
+The external Windows handoff writes a plain `.cmd` waiter next to the MSI,
+receives the Frostguard PID plus a one-time token, and launches that script
+through `cmd.exe`. Do not restore a PowerShell `-EncodedCommand` waiter:
+antivirus Behavioral Protection treats that pattern as a scripted installer
+dropper even when Frostguard is exempted. Frostguard authorizes the staged
+waiter immediately before coordinated shutdown. The waiter cannot start the
+installer while the Frostguard PID is alive, and a failed shutdown deletes the
+token so a later unrelated application exit cannot launch the staged installer.

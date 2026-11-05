@@ -7,12 +7,12 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Base64;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -22,7 +22,7 @@ class WindowsInstallerHandoffTest {
     Path temp;
 
     @Test
-    void startsHiddenWaiterWithInstallerAndParentIdentity() throws Exception {
+    void startsCmdWaiterWithInstallerAndParentIdentity() throws Exception {
         Path installer = Files.writeString(temp.resolve("Frostguard-3.0.1.msi"), "test");
         Path installDirectory = Files.createDirectory(temp.resolve("installed Frostguard"));
         Path launcher = Files.writeString(installDirectory.resolve("Frostguard.exe"), "test");
@@ -37,20 +37,25 @@ class WindowsInstallerHandoffTest {
         InstallerHandoff.HandoffSession session = handoff.stage(
                 installer, 4242L, launcher, workspace);
 
-        assertTrue(command.get().contains("Hidden"));
-        assertTrue(command.get().contains("-EncodedCommand"));
-        String script = decodeScript(command.get());
-        assertTrue(script.contains("Get-Process -Id $targetPid"));
-        assertTrue(script.contains("Start-Process -FilePath 'msiexec.exe'"));
-        assertTrue(script.contains("'/i'"));
-        assertTrue(script.contains("('\"{0}\"' -f $installerPath)"));
-        assertTrue(script.contains("'/passive'"));
-        assertTrue(script.contains("'/norestart'"));
-        assertTrue(script.contains("INSTALLDIR=\"{0}\""));
-        assertTrue(script.contains("-Wait -PassThru"));
-        assertTrue(script.contains("@(0, 3010)"));
-        assertTrue(script.contains("The Frostguard restart launcher was not found"));
-        assertTrue(script.contains("Start-Frostguard"));
+        assertTrue(command.get().get(0).toLowerCase().endsWith("cmd.exe"));
+        assertTrue(command.get().contains("/d"));
+        assertTrue(command.get().contains("/c"));
+        assertTrue(command.get().contains("call"));
+        assertFalse(command.get().stream().anyMatch(part -> part.toLowerCase().contains("powershell")));
+        assertFalse(command.get().contains("-EncodedCommand"));
+        assertFalse(command.get().contains("Bypass"));
+
+        Path script = Path.of(command.get().get(command.get().size() - 1));
+        assertTrue(Files.isRegularFile(script));
+        assertTrue(script.getFileName().toString().endsWith(WindowsInstallerHandoff.HANDOFF_SCRIPT_SUFFIX));
+        String scriptText = Files.readString(script, StandardCharsets.UTF_8);
+        assertTrue(scriptText.contains("tasklist /FI \"PID eq %TARGET_PID%\""));
+        assertTrue(scriptText.contains("msiexec /i \"%INSTALLER_PATH%\" /passive /norestart INSTALLDIR=\"%INSTALL_DIRECTORY%\""));
+        assertTrue(scriptText.contains("The Frostguard restart launcher was not found"));
+        assertTrue(scriptText.contains(":start_frostguard"));
+        assertTrue(scriptText.contains("Windows Installer exited with code"));
+        assertFalse(scriptText.toLowerCase().contains("powershell"));
+
         assertEquals("4242", environment.get().get(WindowsInstallerHandoff.PID_ENV));
         assertEquals(installer.toAbsolutePath().normalize().toString(),
                 environment.get().get(WindowsInstallerHandoff.INSTALLER_ENV));
@@ -61,29 +66,11 @@ class WindowsInstallerHandoffTest {
         assertEquals(workspace.toAbsolutePath().normalize().toString(),
                 environment.get().get(WindowsInstallerHandoff.WORKSPACE_ENV));
         Path token = Path.of(environment.get().get(WindowsInstallerHandoff.TOKEN_PATH_ENV));
-        assertTrue(script.contains("TOKEN_PATH"));
         session.authorize();
         assertEquals(environment.get().get(WindowsInstallerHandoff.TOKEN_VALUE_ENV), Files.readString(token));
         session.cancel();
         assertTrue(Files.notExists(token));
-    }
-
-    @Test
-    void preservesQuotedMultilineScriptThroughWindowsProcessCreation() throws Exception {
-        assumeTrue(System.getProperty("os.name", "").toLowerCase().contains("win"));
-        String script = """
-                $value = "quoted value"
-                [Console]::Out.Write($value)
-                """;
-
-        Process process = new ProcessBuilder(WindowsInstallerHandoff.createPowerShellCommand(script))
-                .redirectErrorStream(true)
-                .start();
-
-        assertTrue(process.waitFor(10, TimeUnit.SECONDS));
-        String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-        assertEquals(0, process.exitValue());
-        assertEquals("quoted value", output);
+        assertTrue(Files.notExists(script));
     }
 
     @Test
@@ -99,16 +86,15 @@ class WindowsInstallerHandoffTest {
         Path fakeSystemTools = Files.createDirectory(temp.resolve("fake-system-tools"));
         Files.copy(Path.of(System.getenv("SystemRoot"), "System32", "where.exe"),
                 fakeSystemTools.resolve("msiexec.exe"));
-        Process parent = new ProcessBuilder("powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
-                "Start-Sleep -Milliseconds 750").start();
+        Process parent = new ProcessBuilder("cmd.exe", "/d", "/c", "timeout /t 1 /nobreak >nul").start();
         AtomicReference<Process> waiter = new AtomicReference<>();
         AtomicReference<Map<String, String>> handoffEnvironment = new AtomicReference<>();
         WindowsInstallerHandoff handoff = new WindowsInstallerHandoff((command, environment) -> {
-            String testScript = decodeScript(command).replace(
-                    "Show-UpdateFailure -Details $failureDetails",
-                    "[Console]::Error.WriteLine($failureDetails)");
-            ProcessBuilder builder = new ProcessBuilder(WindowsInstallerHandoff.createPowerShellCommand(testScript))
-                    .redirectErrorStream(true);
+            String scriptPath = command.get(command.size() - 1);
+            String testScript = Files.readString(Path.of(scriptPath), StandardCharsets.UTF_8)
+                    .replace("call :show_update_failure", "echo %FAILURE_DETAILS%");
+            Files.writeString(Path.of(scriptPath), testScript, StandardCharsets.UTF_8);
+            ProcessBuilder builder = new ProcessBuilder(command).redirectErrorStream(true);
             builder.environment().putAll(environment);
             builder.environment().put("PATH", fakeSystemTools + ";" + builder.environment().get("PATH"));
             handoffEnvironment.set(environment);
@@ -150,6 +136,7 @@ class WindowsInstallerHandoffTest {
         });
         assertThrows(UpdateException.class,
                 () -> handoff.stage(installer, 10L, launcher, workspace));
+        assertTrue(Files.notExists(installer.resolveSibling(installer.getFileName() + WindowsInstallerHandoff.HANDOFF_SCRIPT_SUFFIX)));
     }
 
     @Test
@@ -164,13 +151,6 @@ class WindowsInstallerHandoffTest {
 
         assertThrows(UpdateException.class,
                 () -> handoff.stage(installer, 10L, launcher, workspace));
-    }
-
-    private static String decodeScript(java.util.List<String> command) {
-        int encodedCommand = command.indexOf("-EncodedCommand");
-        assertTrue(encodedCommand >= 0);
-        byte[] scriptBytes = Base64.getDecoder().decode(command.get(encodedCommand + 1));
-        return new String(scriptBytes, StandardCharsets.UTF_16LE);
     }
 
     private static void waitForFile(Path file) throws Exception {
