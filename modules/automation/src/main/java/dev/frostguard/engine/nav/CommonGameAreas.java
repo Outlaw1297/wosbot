@@ -42,7 +42,10 @@ public final class CommonGameAreas {
 
     // ── account / energy panel ───────────────────────────────────────
 
-    public static final AreaData PROFILE_AVATAR        = region(24, 24, 61, 61);
+    // Home/World Chief avatar control on 720x1280 (measured MainA debug capture).
+    // The older inner box (24,24)-(61,61) only covered the portrait fill; the full
+    // tappable chrome is the top-left circle including its ring.
+    public static final AreaData PROFILE_AVATAR        = region(0, 1, 92, 78);
     // The can and stamina value remain in this HUD band in both City and World.
     public static final AreaData HUD_STAMINA_ENTRY     = region(8, 101, 105, 126);
     public static final AreaData STAMINA_OCR_AREA      = region(324, 255, 477, 289);

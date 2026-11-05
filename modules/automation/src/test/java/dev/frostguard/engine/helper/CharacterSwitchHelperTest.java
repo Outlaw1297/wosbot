@@ -26,6 +26,18 @@ class CharacterSwitchHelperTest {
     }
 
     @Test
+    void homeChiefAvatarMatchesMeasuredTopLeftControl() {
+        var avatar = CommonGameAreas.PROFILE_AVATAR;
+        var stamina = CommonGameAreas.HUD_STAMINA_ENTRY;
+
+        assertEquals(0, avatar.topLeft().getX());
+        assertEquals(1, avatar.topLeft().getY());
+        assertEquals(92, avatar.bottomRight().getX());
+        assertEquals(78, avatar.bottomRight().getY());
+        assertTrue(avatar.bottomRight().getY() < stamina.topLeft().getY());
+    }
+
+    @Test
     void chiefProfileWaitsForSettingsControlBeforeOcr() {
         assertEquals(2000, CharacterSwitchHelper.PROFILE_OPEN_SETTLE_MS);
         assertEquals(10, CharacterSwitchHelper.PROFILE_READY_ATTEMPTS);
